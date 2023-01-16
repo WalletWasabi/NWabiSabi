@@ -1,4 +1,4 @@
-BudaSabi
+NWabiSabi
 ------
 
 An implementation library of the [WabiSabi protocol](https://eprint.iacr.org/2021/206) for .NET. 
