@@ -45,4 +45,9 @@ public sealed class StrobeHasher
 		_strobe.AddAssociatedData(serializedValue, false);
 		return this;
 	}
+
+	public byte[] GetHash()
+	{
+		return _strobe.Prf(32, false);
+	}
 }

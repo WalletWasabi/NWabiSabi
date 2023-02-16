@@ -9,5 +9,30 @@
   <ItemGroup>
     <PackageReference Include="NBitcoin.Secp256k1" Version="3.1.0" />
   </ItemGroup>
+  <ItemGroup>
+      <None Include="../LICENSE" Pack="true" PackagePath=""/>
+      <None Include="../README.md" Pack="true" PackagePath=""/>
+  </ItemGroup>
 
+  <PropertyGroup>
+    <PackageId>WabiSabi</PackageId>
+    <Version>1.0.1</Version>
+    <projectUrl>https://github.com/zkSNACKs/NWabiSabi</projectUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>
+        WabiSabi library implements the WabiSabi protocol to allow issuing KVAC and operate with them.
+    </description>
+    <summary>Library to allow using the WabiSabi protocol.</summary>
+    <language>en-US</language>
+    <copyright>Please see LICENSE for more details.</copyright>
+    <tags>NAT TRAVERSAL UPNP PMP PORT FORWARD .NET MONO</tags>
+    <releaseNotes>
+        Please look at https://github.com/zkSNACKs/NWabiSabi/blob/master/CHANGELOG.md
+    </releaseNotes>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/zkSNACKs/NWabiSabi</RepositoryUrl>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+  </PropertyGroup>
+      
 </Project>
