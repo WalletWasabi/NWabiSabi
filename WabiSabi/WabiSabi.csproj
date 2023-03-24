@@ -16,7 +16,6 @@
 
   <PropertyGroup>
     <PackageId>WabiSabi</PackageId>
-    <Version>1.0.1</Version>
     <projectUrl>https://github.com/zkSNACKs/NWabiSabi</projectUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <description>

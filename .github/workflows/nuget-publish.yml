@@ -12,7 +12,7 @@ env:
 
 jobs:
   deploy:
-    name: 'Deploy'
+    name: 'Publish to NuGet.org'
     runs-on: 'windows-latest'
     steps:
     - name: 'Checkout'
