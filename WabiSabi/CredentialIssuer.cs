@@ -112,8 +112,8 @@ public class CredentialIssuer
 		Guard.NotNull(nameof(registrationRequest), registrationRequest);
 
 		var isNullRequest = registrationRequest.IsNullRequest();
-		var requested = registrationRequest.Requested ?? Enumerable.Empty<IssuanceRequest>();
-		var presented = registrationRequest.Presented ?? Enumerable.Empty<CredentialPresentation>();
+		var requested = registrationRequest.Requested;
+		var presented = registrationRequest.Presented;
 
 		var requestedCount = requested.Count();
 		var requiredNumberOfRequested = registrationRequest.IsPresentationOnlyRequest() ? 0 : NumberOfCredentials;
