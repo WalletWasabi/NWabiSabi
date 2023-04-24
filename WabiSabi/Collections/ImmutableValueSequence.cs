@@ -8,7 +8,7 @@ namespace WabiSabi.Collections;
 /// it can be compared with other sequences and the equality of two sequences is based on the
 /// equality of the elements.
 /// </summary>
-public readonly struct ImmutableValueSequence<T> : IReadOnlyCollection<T>, IEquatable<ImmutableValueSequence<T>> where T : IEquatable<T>
+public readonly struct ImmutableValueSequence<T> : IReadOnlyList<T>, IEquatable<ImmutableValueSequence<T>> where T : IEquatable<T>
 {
 	private readonly ImmutableArray<T> _elements;
 
@@ -18,6 +18,8 @@ public readonly struct ImmutableValueSequence<T> : IReadOnlyCollection<T>, IEqua
 	}
 
 	public static ImmutableValueSequence<T> Empty { get; } = new();
+
+	public T this[int index] => _elements[index];
 
 	public int Count => _elements.Length;
 
