@@ -1,6 +1,5 @@
 namespace WabiSabi.CredentialRequesting;
 
-using Crypto;
 using Crypto.ZeroKnowledge;
 
 /// <summary>
@@ -11,8 +10,8 @@ public record CredentialsResponseValidation
 {
 	internal CredentialsResponseValidation(
 		Transcript transcript,
-		IEnumerable<Credential> presented,
-		IEnumerable<IssuanceValidationData> requested)
+		IReadOnlyList<Credential> presented,
+		IReadOnlyList<IssuanceValidationData> requested)
 	{
 		Transcript = transcript;
 		Presented = presented;
@@ -27,10 +26,10 @@ public record CredentialsResponseValidation
 	/// <summary>
 	/// The credentials that were presented to the coordinator.
 	/// </summary>
-	public IEnumerable<Credential> Presented { get; }
+	public IReadOnlyList<Credential> Presented { get; }
 
 	/// <summary>
 	/// The data state that has to be used to validate the issued credentials.
 	/// </summary>
-	public IEnumerable<IssuanceValidationData> Requested { get; }
+	public IReadOnlyList<IssuanceValidationData> Requested { get; }
 }

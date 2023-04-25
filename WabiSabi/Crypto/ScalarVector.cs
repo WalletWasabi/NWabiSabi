@@ -7,7 +7,7 @@ using NBitcoin.Secp256k1;
 using Groups;
 using Helpers;
 
-public class ScalarVector : IEnumerable<Scalar>, IEquatable<ScalarVector>
+public class ScalarVector : IReadOnlyCollection<Scalar>, IEquatable<ScalarVector>
 {
 	internal ScalarVector(IEnumerable<Scalar> scalars)
 	{

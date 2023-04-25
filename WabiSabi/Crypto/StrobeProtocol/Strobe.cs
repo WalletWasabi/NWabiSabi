@@ -32,9 +32,9 @@ public sealed class Strobe128
 		AddAssociatedMetaData(Encoding.UTF8.GetBytes(procotol), false);
 	}
 
-	private Strobe128(byte[] state, StrobeFlags flags, byte beginPosition, byte position)
+	internal Strobe128(ReadOnlySpan<byte> state, StrobeFlags flags, byte beginPosition, byte position)
 	{
-		Buffer.BlockCopy(state, 0, _state, 0, _state.Length);
+		state.CopyTo(_state);
 		_currentFlags = flags;
 		_beginPosition = beginPosition;
 		_position = position;
@@ -43,6 +43,14 @@ public sealed class Strobe128
 	~Strobe128()
 	{
 		Array.Clear(_state, 0, _state.Length);
+	}
+
+	internal void Deconstruct(Span<byte> state, out StrobeFlags flags, out byte beginPosition, out byte position)
+	{
+		_state.CopyTo(state);
+		flags = _currentFlags;
+		beginPosition = _beginPosition;
+		position = _position;
 	}
 
 	public void AddAssociatedMetaData(byte[] data, bool more)
@@ -84,6 +92,7 @@ public sealed class Strobe128
 	{
 		return ByteHelpers.ToHex(_state);
 	}
+
 	private void Absorb(byte[] data)
 	{
 		foreach (var b in data)

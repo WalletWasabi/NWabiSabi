@@ -6,7 +6,7 @@ using Helpers;
 
 public record MAC
 {
-	private MAC(Scalar t, GroupElement v)
+	internal MAC(Scalar t, GroupElement v)
 	{
 		T = Guard.NotZero(nameof(t), t);
 		V = Guard.NotNullOrInfinity(nameof(v), v);

@@ -7,7 +7,7 @@ using Crypto.Groups;
 /// </summary>
 public record IssuanceRequest : IEquatable<IssuanceRequest>
 {
-	internal IssuanceRequest(GroupElement ma, IEnumerable<GroupElement> bitCommitments)
+	internal IssuanceRequest(GroupElement ma, IReadOnlyCollection<GroupElement> bitCommitments)
 	{
 		Ma = ma;
 		BitCommitments = bitCommitments;
@@ -21,7 +21,7 @@ public record IssuanceRequest : IEquatable<IssuanceRequest>
 	/// <summary>
 	/// Pedersen commitments to the credential amount's binary decomposition.
 	/// </summary>
-	public IEnumerable<GroupElement> BitCommitments { get; }
+	public IReadOnlyCollection<GroupElement> BitCommitments { get; }
 
 	public override int GetHashCode()
 	{

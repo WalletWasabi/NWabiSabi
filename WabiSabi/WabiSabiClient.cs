@@ -58,7 +58,7 @@ public class WabiSabiClient
 			var ma = randomness * Generators.Gh;
 
 			knowledge[i] = ProofSystem.ZeroProofKnowledge(ma, randomness);
-			credentialsToRequest[i] = new IssuanceRequest(ma, Enumerable.Empty<GroupElement>());
+			credentialsToRequest[i] = new IssuanceRequest(ma, Array.Empty<GroupElement>());
 			validationData[i] = new IssuanceValidationData(0, randomness, ma);
 		}
 
@@ -70,7 +70,7 @@ public class WabiSabiClient
 				ProofSystem.Prove(transcript, knowledge, RandomNumberGenerator)),
 			new CredentialsResponseValidation(
 				transcript,
-				Enumerable.Empty<Credential>(),
+				Array.Empty<Credential>(),
 				validationData));
 	}
 
@@ -172,7 +172,7 @@ public class WabiSabiClient
 				ProofSystem.Prove(transcript, knowledgeToProve, RandomNumberGenerator)),
 			new CredentialsResponseValidation(
 				transcript,
-				credentialsToPresent,
+				credentialsToPresent.ToArray(),
 				validationData));
 	}
 
