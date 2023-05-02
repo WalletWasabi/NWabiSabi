@@ -13,12 +13,21 @@ public static class Interop
 		[In] NativeCreateRequestParameters* parameters,
 		[Out] NativeCredentialRequestData* request)
 	{
+		return CreateRequestForZeroAmount(
+			Unsafe.AsRef<NativeCreateRequestParameters>(parameters),
+			out Unsafe.AsRef<NativeCredentialRequestData>(request));
+	}
+	
+	public static int CreateRequestForZeroAmount(
+		in NativeCreateRequestParameters parameters,
+		out NativeCredentialRequestData request)
+	{
 		try
 		{
-			var client = CreateClient(Unsafe.AsRef<NativeCreateRequestParameters>(parameters));
+			var client = CreateClient(parameters);
 			var result = client.CreateRequestForZeroAmount();
 
-			*request = new()
+			request = new()
 			{
 				Request = NativeCredentialsRequest.FromManaged(result.CredentialsRequest),
 				Validation = NativeCredentialsResponseValidation.FromManaged(result.CredentialsResponseValidation)
@@ -28,6 +37,7 @@ public static class Interop
 		}
 		catch (Exception e)
 		{
+			Unsafe.SkipInit(out request);
 			return e.HResult;
 		}
 	}
@@ -38,6 +48,19 @@ public static class Interop
 		NativeArray<long> amounts,
 		NativeArray<NativeCredential> credentials,
 		[Out] NativeCredentialRequestData* request)
+	{
+		return CreateRequest(
+			Unsafe.AsRef<NativeCreateRequestParameters>(parameters),
+			amounts,
+			credentials,
+			out Unsafe.AsRef<NativeCredentialRequestData>(request));
+	}
+
+	public static int CreateRequest(
+		in  NativeCreateRequestParameters parameters,
+		NativeArray<long> amounts,
+		NativeArray<NativeCredential> credentials,
+		out NativeCredentialRequestData request)
 	{
 		try
 		{
@@ -51,10 +74,10 @@ public static class Interop
 				credentialsArray[index] = NativeCredential.ToManaged(credentialsSpan[index]);
 			}
 
-			var client = CreateClient(Unsafe.AsRef<NativeCreateRequestParameters>(parameters));
+			var client = CreateClient(parameters);
 			var result = client.CreateRequest(amounts.AsSpan().ToArray(), credentialsArray, CancellationToken.None);
 
-			*request = new()
+			request = new()
 			{
 				Request = NativeCredentialsRequest.FromManaged(result.CredentialsRequest),
 				Validation = NativeCredentialsResponseValidation.FromManaged(result.CredentialsResponseValidation)
@@ -64,6 +87,7 @@ public static class Interop
 		}
 		catch (Exception e)
 		{
+			Unsafe.SkipInit(out request);
  			return e.HResult;
 		}
 	}
@@ -75,6 +99,19 @@ public static class Interop
 		[In] NativeCredentialsResponseValidation* validation,
 		[Out] NativeArray<NativeCredential>* credentials)
 	{
+		return HandleResponse(
+			Unsafe.AsRef<NativeCreateRequestParameters>(parameters),
+			Unsafe.AsRef<NativeCredentialsResponse>(response),
+			Unsafe.AsRef<NativeCredentialsResponseValidation>(validation),
+			out Unsafe.AsRef<NativeArray<NativeCredential>>(credentials));
+	}
+	
+	public static unsafe int HandleResponse(
+		in NativeCreateRequestParameters parameters,
+		in NativeCredentialsResponse response,
+		in NativeCredentialsResponseValidation validation,
+		out NativeArray<NativeCredential> credentials)
+	{
 		try
 		{
 			var client = CreateClient(Unsafe.AsRef<NativeCreateRequestParameters>(parameters));
@@ -84,12 +121,13 @@ public static class Interop
 					NativeCredentialsResponseValidation.ToManaged(Unsafe.AsRef<NativeCredentialsResponseValidation>(validation)))
 				.ToArray();
 
-			*credentials = NativeArray.FromManaged(result, static credential => NativeCredential.FromManaged(credential));
+			credentials = NativeArray.FromManaged(result, static credential => NativeCredential.FromManaged(credential));
 			
 			return 0;
 		}
 		catch (Exception e)
 		{
+			Unsafe.SkipInit(out credentials);
 			return e.HResult;
 		}
 	}
@@ -97,25 +135,30 @@ public static class Interop
 	[UnmanagedCallersOnly]
 	public static unsafe void FreeRequest([In] NativeCredentialRequestData* request)
 	{
-		if (request is not null)
+		FreeRequest(ref Unsafe.AsRef<NativeCredentialRequestData>(request));
+	}
+	
+	public static unsafe void FreeRequest(ref NativeCredentialRequestData request)
+	{
+		if (!Unsafe.IsNullRef(ref request))
 		{
-			foreach (var requested in request->Request.Requested.AsSpan())
+			foreach (var requested in request.Request.Requested.AsSpan())
 			{
 				Free(requested.BitCommitments.Data);
 			}
 
-			foreach (var proof in request->Request.Proofs.AsSpan())
+			foreach (var proof in request.Request.Proofs.AsSpan())
 			{
 				Free(proof.PublicNonces.Data);
 				Free(proof.Responses.Data);
 			}
 			
-			Free(request->Request.Presented.Data);
-			Free(request->Request.Requested.Data);
-			Free(request->Request.Proofs.Data);
+			Free(request.Request.Presented.Data);
+			Free(request.Request.Requested.Data);
+			Free(request.Request.Proofs.Data);
 
-			Free(request->Validation.Presented.Data);
-			Free(request->Validation.Requested.Data);
+			Free(request.Validation.Presented.Data);
+			Free(request.Validation.Requested.Data);
 		}
 
 		static void Free<T>(T* value)
