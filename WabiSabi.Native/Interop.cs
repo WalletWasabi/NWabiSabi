@@ -94,6 +94,7 @@ public static class Interop
 		}
 	}
 
+	[UnmanagedCallersOnly]
 	public static unsafe void FreeRequest([In] NativeCredentialRequestData* request)
 	{
 		if (request is not null)
