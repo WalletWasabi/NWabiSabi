@@ -16,8 +16,6 @@ public sealed class Transcript
 {
 	private const int KeySizeInBytes = 32;
 
-	private Strobe128 _strobe;
-
 	private static readonly byte[] StatementTag = Encoding.UTF8.GetBytes("statement");
 	private static readonly byte[] ChallengeTag = Encoding.UTF8.GetBytes("challenge");
 	private static readonly byte[] PublicNonceTag = Encoding.UTF8.GetBytes("nonce-commitment");
@@ -41,14 +39,16 @@ public sealed class Transcript
 	}
 
 	// Private constructor used for cloning.
-	private Transcript(Strobe128 strobe)
+	internal Transcript(Strobe128 strobe)
 	{
-		_strobe = strobe;
+		Strobe = strobe;
 	}
+
+	internal Strobe128 Strobe { get; }
 
 	// Generate synthetic nonce using current state combined with additional randomness.
 	public SyntheticSecretNonceProvider CreateSyntheticSecretNonceProvider(IEnumerable<Scalar> secrets, WasabiRandom random)
-		=> new(_strobe.MakeCopy(), secrets, random);
+		=> new(Strobe.MakeCopy(), secrets, random);
 
 	public void CommitPublicNonces(IEnumerable<GroupElement> publicNonces)
 	{
@@ -68,8 +68,8 @@ public sealed class Transcript
 		int overflow;
 		do
 		{
-			_strobe.AddAssociatedMetaData(ChallengeTag, false);
-			scalar = new Scalar(_strobe.Prf(KeySizeInBytes, false), out overflow);
+			Strobe.AddAssociatedMetaData(ChallengeTag, false);
+			scalar = new Scalar(Strobe.Prf(KeySizeInBytes, false), out overflow);
 		}
 		while (overflow != 0);
 		return scalar;
@@ -77,15 +77,15 @@ public sealed class Transcript
 
 	private void AddMessage(byte[] label, byte[] message)
 	{
-		_strobe.AddAssociatedMetaData(label, false);
-		_strobe.AddAssociatedMetaData(BitConverter.GetBytes(message.Length), true);
-		_strobe.AddAssociatedData(message, false);
+		Strobe.AddAssociatedMetaData(label, false);
+		Strobe.AddAssociatedMetaData(BitConverter.GetBytes(message.Length), true);
+		Strobe.AddAssociatedData(message, false);
 	}
 
 	private void AddMessages(byte[] label, IEnumerable<byte[]> messages)
 	{
-		_strobe.AddAssociatedMetaData(label, false);
-		_strobe.AddAssociatedMetaData(BitConverter.GetBytes(messages.Count()), true);
+		Strobe.AddAssociatedMetaData(label, false);
+		Strobe.AddAssociatedMetaData(BitConverter.GetBytes(messages.Count()), true);
 		foreach (var message in messages.Select((m, i) => (Index: i, Payload: m)))
 		{
 			AddMessage(BitConverter.GetBytes(message.Index), message.Payload);

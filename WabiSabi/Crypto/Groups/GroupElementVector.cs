@@ -3,7 +3,7 @@ using WabiSabi.Helpers;
 
 namespace WabiSabi.Crypto.Groups;
 
-public class GroupElementVector : IEnumerable<GroupElement>
+public class GroupElementVector : IReadOnlyCollection<GroupElement>
 {
 	internal GroupElementVector(IEnumerable<GroupElement> groupElements)
 	{

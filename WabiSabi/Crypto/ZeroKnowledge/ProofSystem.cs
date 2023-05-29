@@ -141,7 +141,7 @@ internal partial class ProofSystem
 
 	// TODO swap return value order, remove GroupElement argument
 	// expect nonce provider instead of WasabiRandom?
-	public static (Knowledge knowledge, IEnumerable<GroupElement> bitCommitments) RangeProofKnowledge(Scalar a, Scalar r, int width, WasabiRandom rnd)
+	public static (Knowledge knowledge, IReadOnlyList<GroupElement> bitCommitments) RangeProofKnowledge(Scalar a, Scalar r, int width, WasabiRandom rnd)
 	{
 		var ma = PedersenCommitment(a, r);
 		var bits = Enumerable.Range(0, width).Select(i => a.GetBits(i, 1) == 0 ? Scalar.Zero : Scalar.One);

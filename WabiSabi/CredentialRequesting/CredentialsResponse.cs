@@ -13,7 +13,7 @@ using Crypto.ZeroKnowledge;
 /// </remarks>
 public class CredentialsResponse
 {
-	public CredentialsResponse(IEnumerable<MAC> issuedCredentials, IEnumerable<Proof> proofs)
+	public CredentialsResponse(IReadOnlyList<MAC> issuedCredentials, IReadOnlyList<Proof> proofs)
 	{
 		IssuedCredentials = issuedCredentials;
 		Proofs = proofs;
