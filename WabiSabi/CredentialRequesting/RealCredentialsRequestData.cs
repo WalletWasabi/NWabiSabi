@@ -1,5 +1,0 @@
-namespace WabiSabi.CredentialRequesting;
-
-public record RealCredentialsRequestData(
-	RealCredentialsRequest CredentialsRequest,
-	CredentialsResponseValidation CredentialsResponseValidation);
