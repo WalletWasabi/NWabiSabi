@@ -1,0 +1,14 @@
+{
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build",
+        "--background-index",
+        "--clang-tidy",
+        "--header-insertion=never"
+    ],
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.configureArgs": [
+        "-DFETCHCONTENT_FULLY_DISCONNECTED=ON",
+        "-DFETCHCONTENT_SOURCE_DIR_SECP256K1=${env:SECP256K1_SOURCE_DIR}"
+    ],
+    "C_Cpp.intelliSenseEngine": "disabled"
+}

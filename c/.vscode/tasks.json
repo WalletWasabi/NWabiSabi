@@ -1,0 +1,37 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "cmake-configure-debug",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "build",
+                "-G", "Ninja",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "-DFETCHCONTENT_FULLY_DISCONNECTED=ON",
+                "-DFETCHCONTENT_SOURCE_DIR_SECP256K1=${env:SECP256K1_SOURCE_DIR}",
+                "-S", "."
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": { "reveal": "silent", "panel": "shared" },
+            "group": "build"
+        },
+        {
+            "label": "cmake-build-debug",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "build"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "cmake-configure-debug",
+            "presentation": { "reveal": "always", "panel": "shared" },
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": "$gcc"
+        }
+    ]
+}

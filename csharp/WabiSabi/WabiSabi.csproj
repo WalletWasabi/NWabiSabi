@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -10,8 +10,8 @@
     <PackageReference Include="NBitcoin.Secp256k1" Version="3.1.0" />
   </ItemGroup>
   <ItemGroup>
-      <None Include="../LICENSE" Pack="true" PackagePath=""/>
-      <None Include="../README.md" Pack="true" PackagePath=""/>
+      <None Include="../../LICENSE" Pack="true" PackagePath=""/>
+      <None Include="../../README.md" Pack="true" PackagePath=""/>
   </ItemGroup>
 
   <PropertyGroup>

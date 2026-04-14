@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>WabiSabiInterop</RootNamespace>
+    <AssemblyName>WabiSabiInterop</AssemblyName>
+    <!-- Prevent the test project subdirectory from being compiled into the exe. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);WabiSabiInterop.Tests/**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../csharp/WabiSabi/WabiSabi.csproj" />
+  </ItemGroup>
+
+  <!-- Copy the native library to the output directory so dotnet run finds it.
+       Build it first: cmake -B c/build -S c ... then: cmake -build c/build        -->
+  <ItemGroup>
+    <None Include="../c/build/libwabisabi.so"
+          CopyToOutputDirectory="PreserveNewest"
+          Visible="false"
+          Condition="Exists('../c/build/libwabisabi.so')" />
+  </ItemGroup>
+
+  <Target Name="WarnMissingNativeLib" BeforeTargets="Build"
+          Condition="!Exists('../c/build/libwabisabi.so')">
+    <Warning Text="libwabisabi.so not found at c/build/. Build the C library first: cmake -B c/build -S c -DFETCHCONTENT_SOURCE_DIR_SECP256K1=$$SECP256K1_SOURCE_DIR &amp;&amp; cmake --build c/build" />
+  </Target>
+</Project>

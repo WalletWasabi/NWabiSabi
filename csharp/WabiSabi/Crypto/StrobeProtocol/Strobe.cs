@@ -183,7 +183,7 @@ public sealed class Strobe128
 
 	private static void KeccakF1600(byte[] state)
 	{
-		Span<ulong> buffer = MemoryMarshal.Cast<byte, ulong>(state);
+		Span<ulong> buffer = MemoryMarshal.Cast<byte, ulong>(state.AsSpan());
 
 		ulong a00 = buffer[00], a01 = buffer[01], a02 = buffer[02], a03 = buffer[03], a04 = buffer[04];
 		ulong a05 = buffer[05], a06 = buffer[06], a07 = buffer[07], a08 = buffer[08], a09 = buffer[09];

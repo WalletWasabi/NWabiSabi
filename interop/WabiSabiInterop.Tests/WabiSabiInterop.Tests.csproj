@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>WabiSabiInterop.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk"         Version="17.8.0" />
+    <PackageReference Include="xunit"                          Version="2.6.1" />
+    <PackageReference Include="xunit.runner.visualstudio"      Version="2.5.3">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector"             Version="6.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- C# crypto library -->
+  <ItemGroup>
+    <ProjectReference Include="../../csharp/WabiSabi/WabiSabi.csproj" />
+  </ItemGroup>
+
+  <!-- Share source files from the interop project rather than duplicating them -->
+  <ItemGroup>
+    <Compile Include="../NativeWabi.cs"          Link="NativeWabi.cs" />
+    <Compile Include="../WireFormat.cs"           Link="WireFormat.cs" />
+    <Compile Include="../CredentialIssuer.cs"     Link="CredentialIssuer.cs" />
+    <Compile Include="../WabiSabiClient.cs"       Link="WabiSabiClient.cs" />
+    <Compile Include="../Sha256ChainRandom.cs"    Link="Sha256ChainRandom.cs" />
+  </ItemGroup>
+
+  <!-- The native shared library must be present; if it is missing the
+       DllImport will throw at runtime, which is an intentional test failure. -->
+  <ItemGroup>
+    <None Include="../../c/build/libwabisabi.so"
+          CopyToOutputDirectory="PreserveNewest"
+          Visible="false"
+          Condition="Exists('../../c/build/libwabisabi.so')" />
+  </ItemGroup>
+
+  <Target Name="WarnMissingNativeLib" BeforeTargets="Build"
+          Condition="!Exists('../../c/build/libwabisabi.so')">
+    <Warning Text="libwabisabi.so not found at c/build/. Tests will fail at runtime. Build the C library first: cmake -B c/build -S c ... &amp;&amp; cmake --build c/build" />
+  </Target>
+
+</Project>

@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug wabisabi_test",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/wabisabi_test",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "cmake-build-debug"
+        }
+    ]
+}
