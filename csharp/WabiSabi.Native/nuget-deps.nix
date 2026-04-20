@@ -3,7 +3,7 @@
 #
 # To regenerate after a dependency change:
 #   nix build .#packages.x86_64-linux.wabisabi-nuget.passthru.fetch-deps
-#   ./result interop/WabiSabi.Native/nuget-deps.nix
+#   ./result csharp/WabiSabi.Native/nuget-deps.nix
 { fetchNuGet }: [
   (fetchNuGet {
     pname   = "NBitcoin.Secp256k1";

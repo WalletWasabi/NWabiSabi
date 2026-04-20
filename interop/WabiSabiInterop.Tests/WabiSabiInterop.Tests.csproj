@@ -21,18 +21,14 @@
     </PackageReference>
   </ItemGroup>
 
-  <!-- C# crypto library -->
+  <!-- Native library (includes WabiSabi managed library as a transitive dependency) -->
   <ItemGroup>
-    <ProjectReference Include="../../csharp/WabiSabi/WabiSabi.csproj" />
+    <ProjectReference Include="../../csharp/WabiSabi.Native/WabiSabi.Native.csproj" />
   </ItemGroup>
 
-  <!-- Share source files from the interop project rather than duplicating them -->
+  <!-- Sha256ChainRandom lives in the interop exe project; share it here -->
   <ItemGroup>
-    <Compile Include="../NativeWabi.cs"          Link="NativeWabi.cs" />
-    <Compile Include="../WireFormat.cs"           Link="WireFormat.cs" />
-    <Compile Include="../CredentialIssuer.cs"     Link="CredentialIssuer.cs" />
-    <Compile Include="../WabiSabiClient.cs"       Link="WabiSabiClient.cs" />
-    <Compile Include="../Sha256ChainRandom.cs"    Link="Sha256ChainRandom.cs" />
+    <Compile Include="../Sha256ChainRandom.cs" Link="Sha256ChainRandom.cs" />
   </ItemGroup>
 
   <!-- The native shared library must be present; if it is missing the
