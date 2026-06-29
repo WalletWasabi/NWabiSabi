@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace WabiSabiInterop;
+namespace WabiSabi.Native;
 
 /// <summary>
 /// P/Invoke bindings for the WabiSabi C shared library (libwabisabi.so / wabisabi.dll).
@@ -17,6 +17,14 @@ namespace WabiSabiInterop;
 internal static class NativeWabi
 {
     private const string Lib = "wabisabi";
+
+    /// <summary>
+    /// Static constructor ensures the native library is initialized before any P/Invoke calls.
+    /// </summary>
+    static NativeWabi()
+    {
+        Init();
+    }
 
     // Wire-format sizes (mirror of C WABISABI_*_SIZE constants)
     public const int ScalarSize          = 32;

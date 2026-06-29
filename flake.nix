@@ -2,7 +2,7 @@
   description = "WabiSabi anonymous credentials — C and C# implementations";
 
   inputs = {
-    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url     = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -14,6 +14,7 @@
           config.allowUnfreePredicate = pkg:
             builtins.elem (nixpkgs.lib.getName pkg) [ "vscode" "vscode-with-extensions" ];
         };
+        pkgsUnfree = import nixpkgs { system = "x86_64-linux"; config.allowUnfree = true; };
 
         # secp256k1 v0.5.1 source — same version pinned in c/CMakeLists.txt
         secp256k1-src = pkgs.fetchFromGitHub {
@@ -131,15 +132,15 @@
         wabisabi-c-win64       = buildWabiSabiCross pkgs.pkgsCross.mingwW64;
 
         # ------------------------------------------------------------------ #
-        # NuGet package: WabiSabi.Native (C# wrappers + native shared libs)  #
+        # NuGet package: WabiSabi (managed + native, one assembly + runtimes) #
         # ------------------------------------------------------------------ #
         wabisabi-nuget = pkgs.buildDotnetModule {
-          pname   = "WabiSabi.Native";
-          version = "0.1.0";
+          pname   = "WabiSabi";
+          version = "1.1.0";
           src     = dotnet-src;
 
-          projectFile = "csharp/WabiSabi.Native/WabiSabi.Native.csproj";
-          nugetDeps   = ./csharp/WabiSabi.Native/nuget-deps.nix;
+          projectFile = "csharp/WabiSabi/WabiSabi.csproj";
+          nugetDeps   = ./csharp/WabiSabi/nuget-deps.nix;
 
           dotnet-sdk = pkgs.dotnetCorePackages.sdk_10_0;
 
@@ -147,26 +148,26 @@
           # linux-x64 and linux-arm64 are always built; win-x64 via mingw cross-compile.
           # osx-x64/osx-arm64 require a macOS build host (no macOS SDK in nixpkgs).
           preBuild = ''
-            mkdir -p csharp/WabiSabi.Native/runtimes/linux-x64/native
+            mkdir -p csharp/WabiSabi/runtimes/linux-x64/native
             cp ${wabisabi-c}/lib/libwabisabi.so \
-               csharp/WabiSabi.Native/runtimes/linux-x64/native/libwabisabi.so
+               csharp/WabiSabi/runtimes/linux-x64/native/libwabisabi.so
 
-            mkdir -p csharp/WabiSabi.Native/runtimes/linux-arm64/native
+            mkdir -p csharp/WabiSabi/runtimes/linux-arm64/native
             cp ${wabisabi-c-linux-arm64}/lib/libwabisabi.so \
-               csharp/WabiSabi.Native/runtimes/linux-arm64/native/libwabisabi.so
+               csharp/WabiSabi/runtimes/linux-arm64/native/libwabisabi.so
 
-            mkdir -p csharp/WabiSabi.Native/runtimes/win-x64/native
+            mkdir -p csharp/WabiSabi/runtimes/win-x64/native
             cp ${wabisabi-c-win64}/lib/wabisabi.dll \
-               csharp/WabiSabi.Native/runtimes/win-x64/native/wabisabi.dll
+               csharp/WabiSabi/runtimes/win-x64/native/wabisabi.dll
           '' + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
-            mkdir -p csharp/WabiSabi.Native/runtimes/osx-x64/native
+            mkdir -p csharp/WabiSabi/runtimes/osx-arm64/native
             cp ${wabisabi-c}/lib/libwabisabi.dylib \
-               csharp/WabiSabi.Native/runtimes/osx-x64/native/libwabisabi.dylib
+               csharp/WabiSabi/runtimes/osx-arm64/native/libwabisabi.dylib
           '';
 
           buildPhase = ''
             runHook preBuild
-            dotnet pack csharp/WabiSabi.Native/WabiSabi.Native.csproj \
+            dotnet pack csharp/WabiSabi/WabiSabi.csproj \
               --no-restore \
               -c Release \
               -o $out
@@ -177,19 +178,17 @@
           installPhase = "true";
 
           # Expose a script that regenerates nuget-deps.nix when dependencies change:
-          #   nix build .#wabisabi-nuget.passthru.fetch-deps && ./result csharp/WabiSabi.Native/nuget-deps.nix
+          #   nix build .#wabisabi-nuget.passthru.fetch-deps && ./result csharp/WabiSabi/nuget-deps.nix
         };
 
         # .NET runtime libs needed on Linux for dotnet to work
         dotnetLibs = with pkgs; [
-          xorg.libX11
-          xorg.libICE
-          xorg.libSM
-          fontconfig.lib
-          zlib
           stdenv.cc.cc.lib
-          openssl
         ];
+
+        # Python interpreter + test tooling for the bindings/python ctypes wrapper.
+        # The bindings are pure-Python (stdlib ctypes); pytest is for the test suite.
+        pythonEnv = pkgs.python3.withPackages (ps: with ps; [ pytest ]);
 
         # ------------------------------------------------------------------ #
         # VS Code with C/C++ development extensions                            #
@@ -208,7 +207,7 @@
       in
       {
         # nix build              →  builds the C library, FFI shared lib, and test binary
-        # nix build .#wabisabi-nuget  →  produces WabiSabi.Native.0.1.0.nupkg
+        # nix build .#wabisabi-nuget  →  produces WabiSabi.1.1.0.nupkg (managed + native)
         packages.default       = wabisabi-c;
         packages.wabisabi-c    = wabisabi-c;
         packages.wabisabi-nuget = wabisabi-nuget;
@@ -288,6 +287,38 @@
             '';
           };
 
+          # nix develop .#python  →  Python bindings development (ctypes over libwabisabi)
+          python = pkgs.mkShell {
+            name = "wabisabi-python-dev";
+
+            # Python plus the C toolchain, so the native lib can be (re)built here too.
+            packages = [ pythonEnv ] ++ (with pkgs; [ cmake ninja gcc ]);
+
+            shellHook = ''
+              export SECP256K1_SOURCE_DIR="${secp256k1-src}"
+              export PYTHONPATH="$PWD/bindings/python''${PYTHONPATH:+:$PYTHONPATH}"
+              # libwabisabi.so links libsecp256k1.so dynamically; expose both build dirs.
+              export LD_LIBRARY_PATH="$PWD/c/build:$PWD/c/build/_deps/secp256k1-build/src''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+              echo ""
+              echo "  WabiSabi Python dev shell"
+              echo "  ──────────────────────────────────────────────────"
+              echo "  The bindings load c/build/libwabisabi.so — build it first:"
+              echo "    cmake -B c/build -G Ninja -DCMAKE_BUILD_TYPE=Release \\"
+              echo "      -DFETCHCONTENT_FULLY_DISCONNECTED=ON \\"
+              echo "      -DFETCHCONTENT_SOURCE_DIR_SECP256K1=\$SECP256K1_SOURCE_DIR \\"
+              echo "      -S c  &&  cmake --build c/build"
+              echo "  Test:     pytest bindings/python/tests"
+              echo "  Example:  python bindings/python/examples/roundtrip.py"
+              echo ""
+
+              if [ ! -f c/build/libwabisabi.so ]; then
+                echo "  note: c/build/libwabisabi.so not found — build the C library (above) before running tests."
+                echo ""
+              fi
+            '';
+          };
+
           # nix develop  →  combined C + .NET shell for interop work
           default = pkgs.mkShell {
             name = "wabisabi-dev";
@@ -303,6 +334,9 @@
               gnumake
               # .NET tools
               dotnet-sdk_10
+              pkgsUnfree.claude-code
+              # Python bindings
+              pythonEnv
             ];
 
             buildInputs = dotnetLibs;
@@ -310,8 +344,9 @@
             DOTNET_SYSTEM_GLOBALIZATION_INVARIANT = 1;
 
             shellHook = ''
-              export LD_LIBRARY_PATH="$PWD/c/build:${pkgs.lib.makeLibraryPath dotnetLibs}"
+              export LD_LIBRARY_PATH="$PWD/c/build:$PWD/c/build/_deps/secp256k1-build/src:${pkgs.lib.makeLibraryPath dotnetLibs}"
               export SECP256K1_SOURCE_DIR="${secp256k1-src}"
+              export PYTHONPATH="$PWD/bindings/python''${PYTHONPATH:+:$PYTHONPATH}"
 
               echo ""
               echo "  WabiSabi dev shell  (C + .NET)"
@@ -324,6 +359,7 @@
               echo "  .NET build: dotnet build csharp/WabiSabi.sln"
               echo "  .NET test:  dotnet test  csharp/WabiSabi.sln"
               echo "  Interop:    dotnet run --project interop/WabiSabiInterop.csproj"
+              echo "  Python:     pytest bindings/python/tests"
               echo ""
 
               if [ ! -f c/build/compile_commands.json ]; then

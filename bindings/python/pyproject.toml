@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wabisabi"
+version = "0.1.0"
+description = "Python bindings for libwabisabi — WabiSabi KVAC anonymous credentials over secp256k1"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Lucas Ontivero", email = "lucasontivero@gmail.com" }]
+keywords = ["wabisabi", "kvac", "anonymous-credentials", "secp256k1", "bitcoin", "coinjoin"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Security :: Cryptography",
+]
+
+[project.urls]
+Homepage = "https://github.com/zkSNACKs/WabiSabi"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["wabisabi*"]
+
+[tool.setuptools.package-data]
+# Ship a co-located shared library if one is bundled into the package dir.
+wabisabi = ["*.so", "*.dylib", "*.dll"]

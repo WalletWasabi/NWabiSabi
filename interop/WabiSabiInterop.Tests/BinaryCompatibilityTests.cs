@@ -6,11 +6,12 @@ using System.Threading;
 using WabiSabi.Crypto;
 using WabiSabi.Crypto.ZeroKnowledge;
 using WabiSabi.CredentialRequesting;
+using WabiSabi.Native;
 using Xunit;
 
 // Aliases distinguish the native FFI wrappers from the C# reference classes.
-using NativeIssuer = WabiSabiInterop.CredentialIssuer;
-using NativeClient = WabiSabiInterop.WabiSabiClient;
+using NativeIssuer = WabiSabi.Native.CredentialIssuer;
+using NativeClient = WabiSabi.Native.WabiSabiClient;
 using CsIssuer     = WabiSabi.Crypto.CredentialIssuer;
 using CsClient     = WabiSabi.Crypto.WabiSabiClient;
 

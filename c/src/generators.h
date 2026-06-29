@@ -36,6 +36,12 @@ extern wabisabi_ge_t WABISABI_NEG_GH_POW2[255];
 extern const wabisabi_scalar_t WABISABI_SCALAR_ZERO;
 extern const wabisabi_scalar_t WABISABI_SCALAR_ONE;
 
+/* The point at infinity (identity element) */
+extern const wabisabi_ge_t GE_INFINITY;
+
+/* WABISABI_U is computed dynamically from the MAC's t value via wabisabi_generate_u */
+extern wabisabi_ge_t WABISABI_U;
+
 /* Must be called after wabisabi_init() */
 void wabisabi_generators_init(void);
 

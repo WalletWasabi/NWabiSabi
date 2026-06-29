@@ -8,7 +8,7 @@ using WabiSabi.Crypto.Groups;
 using WabiSabi.Crypto.ZeroKnowledge;
 using WabiSabi.CredentialRequesting;
 
-namespace WabiSabiInterop;
+namespace WabiSabi.Native;
 
 /// <summary>
 /// Serializes and deserializes WabiSabi protocol messages to/from the binary wire format

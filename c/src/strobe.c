@@ -20,7 +20,14 @@ static const uint64_t KECCAK_RC[24] = {
 
 static void
 keccak_f1600(uint8_t state[200]) {
-    uint64_t* S = (uint64_t*)state;
+    /* Load the 25 lanes via memcpy rather than casting state to uint64_t*.
+     * The cast aliases a uint8_t[] through a uint64_t lvalue, which is
+     * undefined behaviour (C11 6.5/7) and, at -O2 with strict aliasing,
+     * lets GCC assume the surrounding uint8_t writes (e.g. the XORs in
+     * strobe_run_f) don't touch these lanes — producing a wrong permutation
+     * input. memcpy is the canonical, alias-safe way to reinterpret bytes. */
+    uint64_t S[25];
+    memcpy(S, state, sizeof(S));
     uint64_t a00 = S[0], a01 = S[1], a02 = S[2], a03 = S[3], a04 = S[4];
     uint64_t a05 = S[5], a06 = S[6], a07 = S[7], a08 = S[8], a09 = S[9];
     uint64_t a10 = S[10], a11 = S[11], a12 = S[12], a13 = S[13], a14 = S[14];
@@ -142,6 +149,7 @@ keccak_f1600(uint8_t state[200]) {
     S[22] = a22;
     S[23] = a23;
     S[24] = a24;
+    memcpy(state, S, sizeof(S));
 }
 
 /* ------------- Strobe internals ------------- */

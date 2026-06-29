@@ -17,7 +17,7 @@ public readonly struct ImmutableValueSequence<T> : IReadOnlyList<T>, IEquatable<
 		_elements = sequence.ToImmutableArray();
 	}
 
-	public static ImmutableValueSequence<T> Empty { get; } = new();
+	public static ImmutableValueSequence<T> Empty { get; } = new(ImmutableArray<T>.Empty);
 
 	public T this[int index] => _elements[index];
 

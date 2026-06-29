@@ -11,7 +11,7 @@ using WabiSabi.Crypto.Randomness;
 using WabiSabi.Crypto.ZeroKnowledge;
 using WabiSabi.CredentialRequesting;
 
-namespace WabiSabiInterop;
+namespace WabiSabi.Native;
 
 /// <summary>
 /// FFI-backed drop-in replacement for <see cref="WabiSabi.Crypto.WabiSabiClient"/> that

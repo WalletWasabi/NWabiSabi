@@ -9,7 +9,7 @@
 
 /* Protocol constants */
 #define WABISABI_CREDENTIAL_COUNT  2
-#define WABISABI_MAX_RANGE_WIDTH   20 /* bits; ceil(log2(maxAmount ~1M)) */
+#define WABISABI_MAX_RANGE_WIDTH   51 /* bits; supports the full 21M BTC supply */
 
 /* Wire-format sizes */
 #define WABISABI_SCALAR_SIZE       32                                        /* secp256k1 scalar, big-endian */
