@@ -1,41 +1,165 @@
 name: "Deploy to NuGet"
 
+# Builds the native libwabisabi for every supported RID on a matching runner,
+# collects the binaries into the WabiSabi project's runtimes/, then packs and
+# publishes the single unified `WabiSabi` package (managed + native, one assembly).
+#
+#   RID          how it is built
+#   ----------   ---------------------------------------------------------------
+#   linux-x64    ubuntu-latest, native gcc
+#   linux-arm64  ubuntu-latest, aarch64-linux-gnu cross  (proven by flake.nix)
+#   win-x64      ubuntu-latest, x86_64-w64-mingw32 cross (proven by flake.nix)
+#   osx-x64      macos-latest,  -DCMAKE_OSX_ARCHITECTURES=x86_64
+#   osx-arm64    macos-latest,  -DCMAKE_OSX_ARCHITECTURES=arm64
+
 on:
   push:
-    tags:
-    - 'v*'
+    branches: [ master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
-  PROJECT_PATH: 'csharp/WabiSabi/WabiSabi.csproj'
-  PACKAGE_OUTPUT_DIRECTORY: ${{ github.workspace }}\output
-  NUGET_SOURCE_URL: 'https://api.nuget.org/v3/index.json'
+  RUNTIMES_DIR: csharp/WabiSabi/runtimes
+  PROJECT: csharp/WabiSabi/WabiSabi.csproj
 
 jobs:
-  deploy:
-    name: 'Publish to NuGet.org'
-    runs-on: 'windows-latest'
+  build-native:
+    name: "native ${{ matrix.rid }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+            libfile: libwabisabi.so
+          - rid: linux-arm64
+            os: ubuntu-latest
+            libfile: libwabisabi.so
+            cross: aarch64
+          - rid: win-x64
+            os: ubuntu-latest
+            libfile: wabisabi.dll
+            cross: mingw
+          - rid: osx-x64
+            os: macos-latest
+            libfile: libwabisabi.dylib
+            osx_arch: x86_64
+          - rid: osx-arm64
+            os: macos-latest
+            libfile: libwabisabi.dylib
+            osx_arch: arm64
     steps:
-    - name: 'Checkout'
-      uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-    - name: 'Install dotnet'
-      uses: actions/setup-dotnet@v1
-      with:
-        dotnet-version: '7.0.x'
+      - name: "Install toolchain (Linux)"
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          pkgs="cmake"
+          [ "${{ matrix.cross }}" = "aarch64" ] && pkgs="$pkgs gcc-aarch64-linux-gnu"
+          [ "${{ matrix.cross }}" = "mingw" ]   && pkgs="$pkgs gcc-mingw-w64-x86-64"
+          sudo apt-get install -y $pkgs
 
-    - name: 'Restore packages'
-      run: dotnet restore ${{ env.PROJECT_PATH }}
+      - name: "Install toolchain (macOS)"
+        if: runner.os == 'macOS'
+        run: brew list cmake >/dev/null 2>&1 || brew install cmake
 
-    - name: 'Build project'
-      run: dotnet build ${{ env.PROJECT_PATH }} --no-restore --configuration Release
+      - name: "Configure & build (Linux / cross)"
+        if: runner.os == 'Linux'
+        run: |
+          EXTRA=""
+          case "${{ matrix.cross }}" in
+            aarch64)
+              EXTRA="-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc"
+              ;;
+            mingw)
+              # -static folds libgcc/winpthread into the DLL so it has no runtime deps.
+              EXTRA="-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres -DCMAKE_SHARED_LINKER_FLAGS=-static"
+              ;;
+          esac
+          cmake -B c/build -S c -DCMAKE_BUILD_TYPE=Release $EXTRA
+          cmake --build c/build --target wabisabi
 
-    - name: 'Get Version'
-      uses: Im-Fran/version-from-tag-action@v1.0.3
-      with:
-        remove-first-character: 'v'
+      - name: "Configure & build (macOS)"
+        if: runner.os == 'macOS'
+        run: |
+          cmake -B c/build -S c -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.osx_arch }}
+          cmake --build c/build --target wabisabi
 
-    - name: 'Pack project'
-      run: dotnet pack ${{ env.PROJECT_PATH }} --no-restore --no-build --configuration Release --include-symbols -p:SymbolPackageFormat=snupkg -p:PackageVersion=${{ env.VERSION }} --output ${{ env.PACKAGE_OUTPUT_DIRECTORY }}
+      - name: "Stage native binary"
+        shell: bash
+        run: |
+          dest="staged/runtimes/${{ matrix.rid }}/native"
+          mkdir -p "$dest"
+          built=$(find c/build -maxdepth 3 \
+            \( -name 'libwabisabi.so' -o -name 'libwabisabi.dylib' -o -name '*wabisabi*.dll' \) \
+            ! -name '*.dll.a' | head -n1)
+          if [ -z "$built" ]; then echo "no native library produced"; find c/build; exit 1; fi
+          echo "built: $built -> $dest/${{ matrix.libfile }}"
+          cp "$built" "$dest/${{ matrix.libfile }}"
 
-    - name: 'Push package'
-      run: dotnet nuget push ${{ env.PACKAGE_OUTPUT_DIRECTORY }}\*.nupkg -k ${{ secrets.NUGET_AUTH_TOKEN }} -s ${{ env.NUGET_SOURCE_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: staged/runtimes/
+          if-no-files-found: error
+
+  pack:
+    name: "pack & publish"
+    needs: build-native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: "Download native binaries"
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+          pattern: native-*
+          merge-multiple: true
+
+      - name: "Place binaries into runtimes/"
+        run: |
+          mkdir -p "$RUNTIMES_DIR"
+          cp -r downloaded/runtimes/* "$RUNTIMES_DIR"/
+          echo "Bundled native binaries:"
+          find "$RUNTIMES_DIR" -type f
+
+      - name: "Resolve package version"
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: "Pack"
+        run: |
+          args=(-c Release -o nupkgs)
+          [ -n "${{ steps.ver.outputs.value }}" ] && args+=(-p:PackageVersion=${{ steps.ver.outputs.value }})
+          dotnet pack "$PROJECT" "${args[@]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkg
+          path: nupkgs/*.nupkg
+          if-no-files-found: error
+
+      - name: "Push to NuGet.org (v* tags only)"
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          dotnet nuget push "nupkgs/*.nupkg" \
+            -k "${{ secrets.NUGET_AUTH_TOKEN }}" \
+            -s https://api.nuget.org/v3/index.json \
+            --skip-duplicate

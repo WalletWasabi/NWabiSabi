@@ -23,7 +23,7 @@
 
   <!-- Native library (includes WabiSabi managed library as a transitive dependency) -->
   <ItemGroup>
-    <ProjectReference Include="../../csharp/WabiSabi.Native/WabiSabi.Native.csproj" />
+    <ProjectReference Include="../../csharp/WabiSabi/WabiSabi.csproj" />
   </ItemGroup>
 
   <!-- Sha256ChainRandom lives in the interop exe project; share it here -->

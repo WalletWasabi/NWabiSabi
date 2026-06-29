@@ -10,7 +10,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);WabiSabiInterop.Tests/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../csharp/WabiSabi.Native/WabiSabi.Native.csproj" />
+    <ProjectReference Include="../csharp/WabiSabi/WabiSabi.csproj" />
   </ItemGroup>
 
   <!-- Copy the native library to the output directory so dotnet run finds it.

@@ -9,23 +9,36 @@
   <ItemGroup>
     <PackageReference Include="NBitcoin.Secp256k1" Version="3.1.0" />
   </ItemGroup>
-  <ItemGroup>
-      <None Include="../../LICENSE" Pack="true" PackagePath=""/>
-      <None Include="../../README.md" Pack="true" PackagePath=""/>
-  </ItemGroup>
 
+  <!--
+    This is the single, unified `WabiSabi` NuGet package. The assembly
+    (WabiSabi.dll) contains both implementations behind an identical API:
+
+      namespace WabiSabi          — the pure-managed reference implementation
+      namespace WabiSabi.Native   — P/Invoke wrappers over the libwabisabi C library (Native/)
+
+    plus the pre-built native binaries under runtimes/<rid>/native/. A consumer
+    references the one package and can use both `using WabiSabi;` and
+    `using WabiSabi.Native;`. The native library is loaded lazily (on first use of
+    a WabiSabi.Native type), so pure-managed consumers never touch it.
+  -->
   <PropertyGroup>
-    <Version>1.0.2</Version>
+    <Version>1.1.0</Version>
     <PackageId>WabiSabi</PackageId>
+    <Authors>WabiSabi Contributors</Authors>
     <projectUrl>https://github.com/zkSNACKs/NWabiSabi</projectUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <description>
-        WabiSabi library implements the WabiSabi protocol to allow issuing KVAC and operate with them.
+        WabiSabi implements the WabiSabi anonymous-credential (KVAC over secp256k1)
+        protocol. The package ships two interchangeable implementations behind an
+        identical API: the pure-managed `WabiSabi`, and the native-backed
+        `WabiSabi.Native` (P/Invoke over the libwabisabi C library, with pre-built
+        binaries for linux-x64, linux-arm64, win-x64, osx-x64 and osx-arm64).
     </description>
-    <summary>Library to allow using the WabiSabi protocol.</summary>
+    <summary>Library to allow using the WabiSabi protocol (managed + native).</summary>
     <language>en-US</language>
     <copyright>Please see LICENSE for more details.</copyright>
-    <tags>NAT TRAVERSAL UPNP PMP PORT FORWARD .NET MONO</tags>
+    <tags>wabisabi coinjoin crypto anonymous-credentials zkp secp256k1 kvac</tags>
     <releaseNotes>
         Please look at https://github.com/zkSNACKs/NWabiSabi/blob/master/CHANGELOG.md
     </releaseNotes>
@@ -34,5 +47,55 @@
     <RepositoryUrl>https://github.com/zkSNACKs/NWabiSabi</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
   </PropertyGroup>
-      
+
+  <!-- Package docs -->
+  <ItemGroup>
+    <None Include="../../LICENSE"   Pack="true" PackagePath="" />
+    <None Include="../../README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <!--
+    Native binaries, one per supported Runtime Identifier. Place the platform
+    shared library in the matching directory before `dotnet pack` (CI does this):
+
+      runtimes/linux-x64/native/libwabisabi.so
+      runtimes/linux-arm64/native/libwabisabi.so
+      runtimes/win-x64/native/wabisabi.dll
+      runtimes/osx-x64/native/libwabisabi.dylib
+      runtimes/osx-arm64/native/libwabisabi.dylib
+
+    .NET resolves the correct one at runtime via the RID graph (no .targets glue).
+  -->
+  <ItemGroup>
+    <None Include="runtimes/linux-x64/native/libwabisabi.so"
+          Pack="true" PackagePath="runtimes/linux-x64/native/"
+          Condition="Exists('runtimes/linux-x64/native/libwabisabi.so')" />
+    <None Include="runtimes/linux-arm64/native/libwabisabi.so"
+          Pack="true" PackagePath="runtimes/linux-arm64/native/"
+          Condition="Exists('runtimes/linux-arm64/native/libwabisabi.so')" />
+    <None Include="runtimes/win-x64/native/wabisabi.dll"
+          Pack="true" PackagePath="runtimes/win-x64/native/"
+          Condition="Exists('runtimes/win-x64/native/wabisabi.dll')" />
+    <None Include="runtimes/osx-x64/native/libwabisabi.dylib"
+          Pack="true" PackagePath="runtimes/osx-x64/native/"
+          Condition="Exists('runtimes/osx-x64/native/libwabisabi.dylib')" />
+    <None Include="runtimes/osx-arm64/native/libwabisabi.dylib"
+          Pack="true" PackagePath="runtimes/osx-arm64/native/"
+          Condition="Exists('runtimes/osx-arm64/native/libwabisabi.dylib')" />
+  </ItemGroup>
+
+  <!-- Warn at pack time if any expected native binary is absent -->
+  <Target Name="WarnMissingNativeBinaries" BeforeTargets="GenerateNuspec">
+    <Warning Text="linux-x64   native binary missing: runtimes/linux-x64/native/libwabisabi.so"
+             Condition="!Exists('runtimes/linux-x64/native/libwabisabi.so')" />
+    <Warning Text="linux-arm64 native binary missing: runtimes/linux-arm64/native/libwabisabi.so"
+             Condition="!Exists('runtimes/linux-arm64/native/libwabisabi.so')" />
+    <Warning Text="win-x64     native binary missing: runtimes/win-x64/native/wabisabi.dll"
+             Condition="!Exists('runtimes/win-x64/native/wabisabi.dll')" />
+    <Warning Text="osx-x64     native binary missing: runtimes/osx-x64/native/libwabisabi.dylib"
+             Condition="!Exists('runtimes/osx-x64/native/libwabisabi.dylib')" />
+    <Warning Text="osx-arm64   native binary missing: runtimes/osx-arm64/native/libwabisabi.dylib"
+             Condition="!Exists('runtimes/osx-arm64/native/libwabisabi.dylib')" />
+  </Target>
+
 </Project>

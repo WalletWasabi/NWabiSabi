@@ -132,15 +132,15 @@
         wabisabi-c-win64       = buildWabiSabiCross pkgs.pkgsCross.mingwW64;
 
         # ------------------------------------------------------------------ #
-        # NuGet package: WabiSabi.Native (C# wrappers + native shared libs)  #
+        # NuGet package: WabiSabi (managed + native, one assembly + runtimes) #
         # ------------------------------------------------------------------ #
         wabisabi-nuget = pkgs.buildDotnetModule {
-          pname   = "WabiSabi.Native";
-          version = "0.1.0";
+          pname   = "WabiSabi";
+          version = "1.1.0";
           src     = dotnet-src;
 
-          projectFile = "csharp/WabiSabi.Native/WabiSabi.Native.csproj";
-          nugetDeps   = ./csharp/WabiSabi.Native/nuget-deps.nix;
+          projectFile = "csharp/WabiSabi/WabiSabi.csproj";
+          nugetDeps   = ./csharp/WabiSabi/nuget-deps.nix;
 
           dotnet-sdk = pkgs.dotnetCorePackages.sdk_10_0;
 
@@ -148,26 +148,26 @@
           # linux-x64 and linux-arm64 are always built; win-x64 via mingw cross-compile.
           # osx-x64/osx-arm64 require a macOS build host (no macOS SDK in nixpkgs).
           preBuild = ''
-            mkdir -p csharp/WabiSabi.Native/runtimes/linux-x64/native
+            mkdir -p csharp/WabiSabi/runtimes/linux-x64/native
             cp ${wabisabi-c}/lib/libwabisabi.so \
-               csharp/WabiSabi.Native/runtimes/linux-x64/native/libwabisabi.so
+               csharp/WabiSabi/runtimes/linux-x64/native/libwabisabi.so
 
-            mkdir -p csharp/WabiSabi.Native/runtimes/linux-arm64/native
+            mkdir -p csharp/WabiSabi/runtimes/linux-arm64/native
             cp ${wabisabi-c-linux-arm64}/lib/libwabisabi.so \
-               csharp/WabiSabi.Native/runtimes/linux-arm64/native/libwabisabi.so
+               csharp/WabiSabi/runtimes/linux-arm64/native/libwabisabi.so
 
-            mkdir -p csharp/WabiSabi.Native/runtimes/win-x64/native
+            mkdir -p csharp/WabiSabi/runtimes/win-x64/native
             cp ${wabisabi-c-win64}/lib/wabisabi.dll \
-               csharp/WabiSabi.Native/runtimes/win-x64/native/wabisabi.dll
+               csharp/WabiSabi/runtimes/win-x64/native/wabisabi.dll
           '' + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
-            mkdir -p csharp/WabiSabi.Native/runtimes/osx-x64/native
+            mkdir -p csharp/WabiSabi/runtimes/osx-arm64/native
             cp ${wabisabi-c}/lib/libwabisabi.dylib \
-               csharp/WabiSabi.Native/runtimes/osx-x64/native/libwabisabi.dylib
+               csharp/WabiSabi/runtimes/osx-arm64/native/libwabisabi.dylib
           '';
 
           buildPhase = ''
             runHook preBuild
-            dotnet pack csharp/WabiSabi.Native/WabiSabi.Native.csproj \
+            dotnet pack csharp/WabiSabi/WabiSabi.csproj \
               --no-restore \
               -c Release \
               -o $out
@@ -178,7 +178,7 @@
           installPhase = "true";
 
           # Expose a script that regenerates nuget-deps.nix when dependencies change:
-          #   nix build .#wabisabi-nuget.passthru.fetch-deps && ./result csharp/WabiSabi.Native/nuget-deps.nix
+          #   nix build .#wabisabi-nuget.passthru.fetch-deps && ./result csharp/WabiSabi/nuget-deps.nix
         };
 
         # .NET runtime libs needed on Linux for dotnet to work
@@ -207,7 +207,7 @@
       in
       {
         # nix build              →  builds the C library, FFI shared lib, and test binary
-        # nix build .#wabisabi-nuget  →  produces WabiSabi.Native.0.1.0.nupkg
+        # nix build .#wabisabi-nuget  →  produces WabiSabi.1.1.0.nupkg (managed + native)
         packages.default       = wabisabi-c;
         packages.wabisabi-c    = wabisabi-c;
         packages.wabisabi-nuget = wabisabi-nuget;
