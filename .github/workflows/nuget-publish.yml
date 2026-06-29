@@ -107,7 +107,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.rid }}
-          path: staged/runtimes/
+          path: staged/
           if-no-files-found: error
 
   pack:
