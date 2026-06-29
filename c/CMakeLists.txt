@@ -10,7 +10,7 @@ include(FetchContent)
 FetchContent_Declare(
     secp256k1
     GIT_REPOSITORY https://github.com/bitcoin-core/secp256k1.git
-    GIT_TAG v0.5.1
+    GIT_TAG v0.7.1
 )
 set(SECP256K1_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SECP256K1_BUILD_EXHAUSTIVE_TESTS OFF CACHE BOOL "" FORCE)
