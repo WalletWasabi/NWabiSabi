@@ -186,6 +186,10 @@
           stdenv.cc.cc.lib
         ];
 
+        # Python interpreter + test tooling for the bindings/python ctypes wrapper.
+        # The bindings are pure-Python (stdlib ctypes); pytest is for the test suite.
+        pythonEnv = pkgs.python3.withPackages (ps: with ps; [ pytest ]);
+
         # ------------------------------------------------------------------ #
         # VS Code with C/C++ development extensions                            #
         # ------------------------------------------------------------------ #
@@ -283,6 +287,38 @@
             '';
           };
 
+          # nix develop .#python  →  Python bindings development (ctypes over libwabisabi)
+          python = pkgs.mkShell {
+            name = "wabisabi-python-dev";
+
+            # Python plus the C toolchain, so the native lib can be (re)built here too.
+            packages = [ pythonEnv ] ++ (with pkgs; [ cmake ninja gcc ]);
+
+            shellHook = ''
+              export SECP256K1_SOURCE_DIR="${secp256k1-src}"
+              export PYTHONPATH="$PWD/bindings/python''${PYTHONPATH:+:$PYTHONPATH}"
+              # libwabisabi.so links libsecp256k1.so dynamically; expose both build dirs.
+              export LD_LIBRARY_PATH="$PWD/c/build:$PWD/c/build/_deps/secp256k1-build/src''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+              echo ""
+              echo "  WabiSabi Python dev shell"
+              echo "  ──────────────────────────────────────────────────"
+              echo "  The bindings load c/build/libwabisabi.so — build it first:"
+              echo "    cmake -B c/build -G Ninja -DCMAKE_BUILD_TYPE=Release \\"
+              echo "      -DFETCHCONTENT_FULLY_DISCONNECTED=ON \\"
+              echo "      -DFETCHCONTENT_SOURCE_DIR_SECP256K1=\$SECP256K1_SOURCE_DIR \\"
+              echo "      -S c  &&  cmake --build c/build"
+              echo "  Test:     pytest bindings/python/tests"
+              echo "  Example:  python bindings/python/examples/roundtrip.py"
+              echo ""
+
+              if [ ! -f c/build/libwabisabi.so ]; then
+                echo "  note: c/build/libwabisabi.so not found — build the C library (above) before running tests."
+                echo ""
+              fi
+            '';
+          };
+
           # nix develop  →  combined C + .NET shell for interop work
           default = pkgs.mkShell {
             name = "wabisabi-dev";
@@ -299,6 +335,8 @@
               # .NET tools
               dotnet-sdk_10
               pkgsUnfree.claude-code
+              # Python bindings
+              pythonEnv
             ];
 
             buildInputs = dotnetLibs;
@@ -306,8 +344,9 @@
             DOTNET_SYSTEM_GLOBALIZATION_INVARIANT = 1;
 
             shellHook = ''
-              export LD_LIBRARY_PATH="$PWD/c/build:${pkgs.lib.makeLibraryPath dotnetLibs}"
+              export LD_LIBRARY_PATH="$PWD/c/build:$PWD/c/build/_deps/secp256k1-build/src:${pkgs.lib.makeLibraryPath dotnetLibs}"
               export SECP256K1_SOURCE_DIR="${secp256k1-src}"
+              export PYTHONPATH="$PWD/bindings/python''${PYTHONPATH:+:$PYTHONPATH}"
 
               echo ""
               echo "  WabiSabi dev shell  (C + .NET)"
@@ -320,6 +359,7 @@
               echo "  .NET build: dotnet build csharp/WabiSabi.sln"
               echo "  .NET test:  dotnet test  csharp/WabiSabi.sln"
               echo "  Interop:    dotnet run --project interop/WabiSabiInterop.csproj"
+              echo "  Python:     pytest bindings/python/tests"
               echo ""
 
               if [ ! -f c/build/compile_commands.json ]; then
