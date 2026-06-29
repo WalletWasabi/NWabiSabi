@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>WabiSabiBenchmarks</RootNamespace>
+    <!-- BenchmarkDotNet requires an optimized build to produce meaningful numbers. -->
+    <Optimize>true</Optimize>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+  </ItemGroup>
+
+  <!-- Native library brings the managed WabiSabi reference library transitively,
+       so both implementations are available under one project. -->
+  <ItemGroup>
+    <ProjectReference Include="../../csharp/WabiSabi.Native/WabiSabi.Native.csproj" />
+  </ItemGroup>
+
+  <!-- libwabisabi.so must sit next to the benchmark assembly so the P/Invoke
+       layer can load it. Build the C library first with cmake. -->
+  <ItemGroup>
+    <None Include="../../c/build/libwabisabi.so"
+          CopyToOutputDirectory="PreserveNewest"
+          Visible="false"
+          Condition="Exists('../../c/build/libwabisabi.so')" />
+  </ItemGroup>
+
+  <Target Name="WarnMissingNativeLib" BeforeTargets="Build"
+          Condition="!Exists('../../c/build/libwabisabi.so')">
+    <Warning Text="libwabisabi.so not found at c/build/. The Native benchmark will throw at runtime. Build the C library first: cmake -B c/build -S c -DCMAKE_BUILD_TYPE=Release &amp;&amp; cmake --build c/build" />
+  </Target>
+
+</Project>

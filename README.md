@@ -35,6 +35,8 @@ WabiSabi/
 │   ├── Program.cs              Cross-language interop smoke test
 │   ├── WabiSabiInterop.csproj
 │   └── WabiSabiInterop.Tests/  xUnit interop compatibility tests
+├── benchmarks/
+│   └── WabiSabiBenchmarks/     BenchmarkDotNet managed-vs-native comparison
 ├── flake.nix                   Root Nix flake (C + .NET + NuGet)
 └── c/flake.nix                 Standalone C-only Nix flake
 ```
@@ -116,6 +118,39 @@ The interop tests require `libwabisabi.so` to be on `LD_LIBRARY_PATH`:
 LD_LIBRARY_PATH=$PWD/c/build \
   dotnet test interop/WabiSabiInterop.Tests/WabiSabiInterop.Tests.csproj
 ```
+
+---
+
+## Performance — managed vs. native
+
+`benchmarks/WabiSabiBenchmarks` is a [BenchmarkDotNet](https://benchmarkdotnet.org/)
+project that runs a complete client⇄coordinator exchange against each
+implementation: a zero-credential **bootstrap**, a real-value **issuance**
+round, and then one or more **reissuance** rounds where real credentials are
+presented to obtain new real credentials (balance-neutral). Issuer key/parameter
+generation is excluded from the measured work; every measured round performs
+proof generation, proof verification + MAC issuance, and issuance-proof
+verification.
+
+| Implementation | Reissuance rounds | Mean | Ratio | Allocated |
+|---|--:|--:|--:|--:|
+| Managed C# | 1 | 198.9 ms | 1.00 | 13.03 MB |
+| Native C   | 1 |  56.8 ms | 0.29 |  2.63 MB |
+| Managed C# | 3 | 389.8 ms | 1.00 | 25.87 MB |
+| Native C   | 3 | 108.6 ms | 0.28 |  3.13 MB |
+
+The native library runs the full protocol roughly **3.4× faster** while
+allocating **5–8× less** managed memory. Numbers are hardware-dependent — treat
+the ratio between the two rows as the comparable result, not the absolute
+milliseconds.
+
+```sh
+cmake -B c/build -S c -DCMAKE_BUILD_TYPE=Release && cmake --build c/build
+LD_LIBRARY_PATH=$PWD/c/build \
+  dotnet run -c Release --project benchmarks/WabiSabiBenchmarks
+```
+
+See `benchmarks/README.md` for details and flags.
 
 ---
 
