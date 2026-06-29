@@ -125,7 +125,7 @@ wabisabi_issuer_state_handle_zero(wabisabi_issuer_state_t* issuer, const wabisab
     }
 
     /* Build statements: zero proofs for each requested credential */
-    wabisabi_statement_t statements[WABISABI_CREDENTIAL_COUNT];
+    wabisabi_statement_t* statements = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_statement_t));
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         statements[i] = wabisabi_zero_proof_statement(&req->requested[i].ma);
     }
@@ -134,13 +134,16 @@ wabisabi_issuer_state_handle_zero(wabisabi_issuer_state_t* issuer, const wabisab
     build_transcript(&transcript, 1);
 
     if (!wabisabi_verify(&transcript, statements, WABISABI_CREDENTIAL_COUNT, req->proofs, WABISABI_CREDENTIAL_COUNT)) {
+        free(statements);
         return WABISABI_ERR_INVALID_PROOF;
     }
+
+    free(statements);
 
     /* Continue with post-verification transcript (same as C# which uses the
    * same transcript for Verify then Prove without resetting it) */
 
-    wabisabi_knowledge_t issue_knowledge[WABISABI_CREDENTIAL_COUNT];
+    wabisabi_knowledge_t* issue_knowledge = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_knowledge_t));
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         uint8_t t_bytes[WABISABI_SCALAR_SIZE];
         /* Derive t from random_bytes + index */
@@ -156,6 +159,8 @@ wabisabi_issuer_state_handle_zero(wabisabi_issuer_state_t* issuer, const wabisab
 
     wabisabi_prove(resp->proofs, &transcript, issue_knowledge, WABISABI_CREDENTIAL_COUNT, random_bytes,
                    WABISABI_SCALAR_SIZE);
+
+    free(issue_knowledge);
 
     return WABISABI_OK;
 }
@@ -206,7 +211,7 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
 
     /* Build statements */
     int n_stmt = 0;
-    wabisabi_statement_t statements[WABISABI_CREDENTIAL_COUNT * 2 + 1];
+    wabisabi_statement_t* statements = malloc((WABISABI_CREDENTIAL_COUNT * 2 + 1) * sizeof(wabisabi_statement_t));
 
     /* Credential show proofs */
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
@@ -266,13 +271,16 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
         for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
             wabisabi_serial_set_remove(&issuer->serial_numbers, &req->presented[i].s);
         }
+        free(statements);
         return WABISABI_ERR_INVALID_PROOF;
     }
+
+    free(statements);
 
     issuer->balance += req->delta;
 
     /* Continue with post-verification transcript (don't rebuild) */
-    wabisabi_knowledge_t issue_knowledge[WABISABI_CREDENTIAL_COUNT];
+    wabisabi_knowledge_t* issue_knowledge = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_knowledge_t));
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         uint8_t t_bytes[WABISABI_SCALAR_SIZE];
         uint8_t seed[WABISABI_SCALAR_SIZE + 1];
@@ -287,6 +295,8 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
 
     wabisabi_prove(resp->proofs, &transcript, issue_knowledge, WABISABI_CREDENTIAL_COUNT, random_bytes,
                    WABISABI_SCALAR_SIZE);
+
+    free(issue_knowledge);
 
     return WABISABI_OK;
 }

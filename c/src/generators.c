@@ -16,6 +16,13 @@ const wabisabi_scalar_t WABISABI_SCALAR_ZERO = {{0}};
 const wabisabi_scalar_t WABISABI_SCALAR_ONE = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
 
+/* The point at infinity (identity element) - is_infinity = 1 */
+const wabisabi_ge_t GE_INFINITY = {{.data = {0}}, 1};
+
+/* WABISABI_U: computed per-MAC from t, but we need a placeholder for
+ * IssuerParams proofs. The actual U is passed via the MAC struct. */
+wabisabi_ge_t WABISABI_U;
+
 void
 wabisabi_generator_from_bytes(wabisabi_ge_t* out, const uint8_t* data, size_t len) {
     uint8_t buf[WABISABI_SCALAR_SIZE];

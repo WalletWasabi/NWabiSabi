@@ -1,4 +1,5 @@
 using System;
+using WabiSabi.Native;
 using Xunit;
 
 namespace WabiSabiInterop.Tests;

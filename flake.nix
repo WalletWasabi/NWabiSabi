@@ -2,7 +2,7 @@
   description = "WabiSabi anonymous credentials — C and C# implementations";
 
   inputs = {
-    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url     = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -14,6 +14,7 @@
           config.allowUnfreePredicate = pkg:
             builtins.elem (nixpkgs.lib.getName pkg) [ "vscode" "vscode-with-extensions" ];
         };
+        pkgsUnfree = import nixpkgs { system = "x86_64-linux"; config.allowUnfree = true; };
 
         # secp256k1 v0.5.1 source — same version pinned in c/CMakeLists.txt
         secp256k1-src = pkgs.fetchFromGitHub {
@@ -182,13 +183,7 @@
 
         # .NET runtime libs needed on Linux for dotnet to work
         dotnetLibs = with pkgs; [
-          xorg.libX11
-          xorg.libICE
-          xorg.libSM
-          fontconfig.lib
-          zlib
           stdenv.cc.cc.lib
-          openssl
         ];
 
         # ------------------------------------------------------------------ #
@@ -303,6 +298,7 @@
               gnumake
               # .NET tools
               dotnet-sdk_10
+              pkgsUnfree.claude-code
             ];
 
             buildInputs = dotnetLibs;

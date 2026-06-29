@@ -35,7 +35,7 @@ void
 wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, const uint8_t* random_bytes,
                                           wabisabi_zero_request_t* out_req, wabisabi_response_validation_t* out_val) {
     (void)c; /* iparams not needed for zero-value credentials */
-    wabisabi_knowledge_t knowledge[WABISABI_CREDENTIAL_COUNT];
+    wabisabi_knowledge_t* knowledge = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_knowledge_t));
 
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         /* Derive randomness for each credential */
@@ -79,6 +79,8 @@ wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, const uint
     wabisabi_prove(out_req->proofs, &prove_transcript, knowledge, WABISABI_CREDENTIAL_COUNT, prove_rand,
                    WABISABI_SCALAR_SIZE);
 
+    free(knowledge);
+
     /* Save post-challenge transcript state for issuer param verification.
    * C# stores the transcript after Prove() completes (post-challenge state),
    * and uses that same advanced transcript for HandleResponse/Verify. */
@@ -98,7 +100,7 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
         amounts[i] = amounts_to_request[i];
     }
 
-    wabisabi_knowledge_t all_knowledge[WABISABI_CREDENTIAL_COUNT * 2 + 1];
+    wabisabi_knowledge_t* all_knowledge = malloc((WABISABI_CREDENTIAL_COUNT * 2 + 1) * sizeof(wabisabi_knowledge_t));
     int n_knowledge = 0;
 
     /* Generate randomization scalars and presentations */
@@ -223,6 +225,8 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
 
     wabisabi_prove(out_req->proofs, &prove_transcript, all_knowledge, n_knowledge, prove_rand, WABISABI_SCALAR_SIZE);
 
+    free(all_knowledge);
+
     /* Save post-challenge transcript for issuer param verification */
     wabisabi_transcript_clone(&out_val->transcript, &prove_transcript);
 
@@ -251,7 +255,7 @@ wabisabi_client_state_handle_response(wabisabi_client_state_t* c, const wabisabi
                                       const wabisabi_response_validation_t* val,
                                       wabisabi_credential_t out_credentials[WABISABI_CREDENTIAL_COUNT]) {
     /* Verify issuer parameter proofs */
-    wabisabi_statement_t statements[WABISABI_CREDENTIAL_COUNT];
+    wabisabi_statement_t* statements = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_statement_t));
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         statements[i] = wabisabi_issuer_params_statement(&c->iparams, &response->issued[i], &val->requested[i].ma);
     }
@@ -262,8 +266,11 @@ wabisabi_client_state_handle_response(wabisabi_client_state_t* c, const wabisabi
 
     if (!wabisabi_verify(&verify_transcript, statements, WABISABI_CREDENTIAL_COUNT, response->proofs,
                          WABISABI_CREDENTIAL_COUNT)) {
+        free(statements);
         return WABISABI_ERR_INVALID_PROOF;
     }
+
+    free(statements);
 
     /* Build credentials from issued MACs */
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {

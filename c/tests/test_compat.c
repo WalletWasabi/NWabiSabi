@@ -100,8 +100,8 @@ make_dlog_knowledge(const wabisabi_scalar_t* secret, const wabisabi_ge_t* gen) {
     kn.statement.n_equations = 1;
     kn.statement.n_witnesses = 1;
     wabisabi_ge_mul(&kn.statement.equations[0].public_point, secret, gen);
-    kn.statement.equations[0].generators[0] = *gen;
-    kn.statement.equations[0].n_gen = 1;
+    kn.statement.equations[0].n_entries = 0;
+    equation_add_entry(&kn.statement.equations[0], 0, gen);
     kn.witness[0] = *secret;
     return kn;
 }
@@ -119,9 +119,9 @@ make_rep_knowledge(const wabisabi_scalar_t* s1, const wabisabi_scalar_t* s2, con
     wabisabi_ge_mul(&t1, s1, g1);
     wabisabi_ge_mul(&t2, s2, g2);
     wabisabi_ge_add(&kn.statement.equations[0].public_point, &t1, &t2);
-    kn.statement.equations[0].generators[0] = *g1;
-    kn.statement.equations[0].generators[1] = *g2;
-    kn.statement.equations[0].n_gen = 2;
+    kn.statement.equations[0].n_entries = 0;
+    equation_add_entry(&kn.statement.equations[0], 0, g1);
+    equation_add_entry(&kn.statement.equations[0], 1, g2);
 
     kn.witness[0] = *s1;
     kn.witness[1] = *s2;
@@ -580,13 +580,13 @@ test_knowledge_of_rep(void) {
 
         /* eq0: x*G  */
         wabisabi_ge_mul(&kn.statement.equations[0].public_point, &x, &WABISABI_G);
-        kn.statement.equations[0].generators[0] = WABISABI_G;
-        kn.statement.equations[0].n_gen = 1;
+        kn.statement.equations[0].n_entries = 0;
+        equation_add_entry(&kn.statement.equations[0], 0, &WABISABI_G);
 
         /* eq1: x*Ga */
         wabisabi_ge_mul(&kn.statement.equations[1].public_point, &x, &WABISABI_Ga);
-        kn.statement.equations[1].generators[0] = WABISABI_Ga;
-        kn.statement.equations[1].n_gen = 1;
+        kn.statement.equations[1].n_entries = 0;
+        equation_add_entry(&kn.statement.equations[1], 0, &WABISABI_Ga);
 
         kn.witness[0] = x;
         CHECK("Chaum-Pedersen dlog equality", prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));

@@ -5,7 +5,7 @@ using WabiSabi.Crypto;
 using WabiSabi.Crypto.Randomness;
 using WabiSabi.CredentialRequesting;
 
-namespace WabiSabiInterop;
+namespace WabiSabi.Native;
 
 /// <summary>
 /// FFI-backed drop-in replacement for <see cref="WabiSabi.Crypto.CredentialIssuer"/> that

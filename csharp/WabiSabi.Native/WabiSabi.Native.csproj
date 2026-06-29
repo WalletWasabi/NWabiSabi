@@ -4,15 +4,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- Keep the assembly name matching the InternalsVisibleTo entry in WabiSabi's AssemblyInfo.cs -->
-    <AssemblyName>WabiSabiInterop</AssemblyName>
-    <RootNamespace>WabiSabiInterop</RootNamespace>
+    <AssemblyName>WabiSabi.Native</AssemblyName>
+    <RootNamespace>WabiSabi.Native</RootNamespace>
   </PropertyGroup>
 
   <!-- NuGet package metadata -->
   <PropertyGroup>
     <PackageId>WabiSabi.Native</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.2.3</Version>
     <Authors>WabiSabi Contributors</Authors>
     <Description>
       C# wrappers for the WabiSabi native C library (libwabisabi), bundled with
