@@ -47,6 +47,34 @@ public class LargeRangeWidthTests
         Assert.Equal(Amounts.Sum(), creds.Sum(c => c.Value));
     }
 
+    // Mirrors the WalletWasabi confirmation flow: present zero credentials and request
+    // the real coin value (1 BTC / 2 BTC). These values set high range-proof bits (~27)
+    // that the {500k,300k} test above never touches.
+    [Theory]
+    [InlineData(100_000_000L, 0L)]
+    [InlineData(100_000_000L, 200_000_000L)]
+    [InlineData(4_299_999_999_999L, 0L)]
+    public void FullProtocol_NativeClient_CSharpIssuer_LargeValues(long a0, long a1)
+    {
+        var amounts = new[] { a0, a1 };
+        var sk      = new CredentialIssuerSecretKey(ChainRng("lrwhv-cs-sk"));
+        var iparams = sk.ComputeCredentialIssuerParameters();
+
+        var client = new NativeClient(iparams, ChainRng("lrwhv-native-client"), WalletWasabiMaxAmount);
+        var issuer = new CsIssuer(sk, ChainRng("lrwhv-cs-issuer"), WalletWasabiMaxAmount);
+
+        var zero      = client.CreateRequestForZeroAmount();
+        var zeroResp  = issuer.HandleRequest(WireRoundTripZero(zero.CredentialsRequest));
+        var zeroCreds = client.HandleResponse(zeroResp, zero.CredentialsResponseValidation).ToArray();
+
+        var real      = client.CreateRequest(amounts, zeroCreds, CancellationToken.None);
+        var realResp  = issuer.HandleRequest(real.CredentialsRequest);
+        var creds     = client.HandleResponse(realResp, real.CredentialsResponseValidation).ToArray();
+
+        Assert.Equal(2, creds.Length);
+        Assert.Equal(amounts.Sum(), creds.Sum(c => c.Value));
+    }
+
     [Fact]
     public void FullProtocol_CSharpClient_NativeIssuer_AtWalletWasabiWidth()
     {
