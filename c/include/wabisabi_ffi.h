@@ -72,6 +72,15 @@ _Static_assert(WABISABI_IPARAMS_SIZE == 66, "iparams size mismatch");
 #define WABISABI_ISSUER_MSTATE_MAX_SIZE \
     (8 + 4 + WABISABI_MAX_SERIAL_NUMBERS * WABISABI_GE_SIZE)
 
+/* Upper bound on a serialized request/response for any range-proof width up to
+ * WABISABI_MAX_RANGE_WIDTH. A real request grows with the range-proof width
+ * (range proofs scale ~linearly with the number of bits); at the maximum width
+ * it is ~21 KiB. 64 KiB is always sufficient and is the recommended size for
+ * the req_out / resp_out buffers. NOTE: a fixed 16 KiB buffer is NOT enough —
+ * a real request for a large max_amount (e.g. 43,000 BTC -> width 42 -> ~17.6
+ * KiB) overruns it. Always pass the true buffer capacity (see *_cap params). */
+#define WABISABI_MAX_REQUEST_SIZE (64 * 1024)
+
 /* ---- Error codes ---- */
 typedef enum {
     WABISABI_OK = 0,
@@ -85,6 +94,7 @@ typedef enum {
     WABISABI_ERR_SERIAL_REUSED = 8,
     WABISABI_ERR_NEGATIVE_BALANCE = 9,
     WABISABI_ERR_SERIAL_SET_FULL = 10, /* serial number set at capacity */
+    WABISABI_ERR_BUFFER_TOO_SMALL = 11, /* an output buffer capacity is too small for the result */
 } wabisabi_error_t;
 
 #ifdef __cplusplus
@@ -116,9 +126,11 @@ wabisabi_error_t wabisabi_iparams_from_sk(const uint8_t* sk_bytes, uint8_t* out_
  * req_bytes     : wire-encoded ZeroRequest.
  * req_len       : byte length of req_bytes.
  * rand_bytes    : WABISABI_RAND_SIZE bytes of fresh randomness for MAC issuance.
- * resp_out      : output buffer; 16 KiB is always sufficient.
+ * resp_out      : output buffer for the response (use WABISABI_MAX_REQUEST_SIZE bytes).
+ * resp_out_cap  : capacity of resp_out in bytes; returns WABISABI_ERR_BUFFER_TOO_SMALL if too small.
  * resp_len_out  : set to actual response length on success.
  * mstate_out    : output buffer for updated mutable state (WABISABI_ISSUER_MSTATE_MAX_SIZE bytes).
+ * mstate_out_cap: capacity of mstate_out in bytes; returns WABISABI_ERR_BUFFER_TOO_SMALL if too small.
  * mstate_out_len: set to actual mutable state length on success.
  */
 wabisabi_error_t wabisabi_issuer_handle_zero(
@@ -127,8 +139,8 @@ wabisabi_error_t wabisabi_issuer_handle_zero(
     const uint8_t* mstate_in, int mstate_in_len,
     const uint8_t* req_bytes, int req_len,
     const uint8_t* rand_bytes,
-    uint8_t* resp_out, int* resp_len_out,
-    uint8_t* mstate_out, int* mstate_out_len);
+    uint8_t* resp_out, int resp_out_cap, int* resp_len_out,
+    uint8_t* mstate_out, int mstate_out_cap, int* mstate_out_len);
 
 /**
  * Handle a real credential request. Same parameters as wabisabi_issuer_handle_zero.
@@ -139,8 +151,8 @@ wabisabi_error_t wabisabi_issuer_handle_real(
     const uint8_t* mstate_in, int mstate_in_len,
     const uint8_t* req_bytes, int req_len,
     const uint8_t* rand_bytes,
-    uint8_t* resp_out, int* resp_len_out,
-    uint8_t* mstate_out, int* mstate_out_len);
+    uint8_t* resp_out, int resp_out_cap, int* resp_len_out,
+    uint8_t* mstate_out, int mstate_out_cap, int* mstate_out_len);
 
 /* ---- Client (stateless) ---- */
 
@@ -148,14 +160,15 @@ wabisabi_error_t wabisabi_issuer_handle_real(
  * Create a zero (bootstrap) credential request.
  *
  * rand_bytes   : WABISABI_RAND_SIZE bytes of randomness.
- * req_out      : output buffer; 16 KiB is always sufficient.
+ * req_out      : output buffer for the request (use WABISABI_MAX_REQUEST_SIZE bytes).
+ * req_out_cap  : capacity of req_out in bytes; returns WABISABI_ERR_BUFFER_TOO_SMALL if too small.
  * req_len_out  : set to actual request length on success.
  * val_out      : output buffer for validation state; must be WABISABI_VALIDATION_SIZE bytes.
  *                Pass this to wabisabi_client_handle_response after receiving the issuer response.
  */
 wabisabi_error_t wabisabi_client_create_zero_request(
     const uint8_t* rand_bytes,
-    uint8_t* req_out, int* req_len_out,
+    uint8_t* req_out, int req_out_cap, int* req_len_out,
     uint8_t val_out[WABISABI_VALIDATION_SIZE]);
 
 /**
@@ -166,7 +179,9 @@ wabisabi_error_t wabisabi_client_create_zero_request(
  * amounts       : array of n_amounts int64_t values to request.
  * creds_bytes   : serialized credentials (n_creds × WABISABI_CREDENTIAL_SIZE bytes).
  * rand_bytes    : WABISABI_RAND_SIZE bytes of randomness.
- * req_out       : output buffer; 16 KiB is always sufficient.
+ * req_out       : output buffer for the request (use WABISABI_MAX_REQUEST_SIZE bytes — a real
+ *                 request grows with the range-proof width and can exceed 16 KiB).
+ * req_out_cap   : capacity of req_out in bytes; returns WABISABI_ERR_BUFFER_TOO_SMALL if too small.
  * req_len_out   : set to actual request length on success.
  * val_out       : output buffer for validation state; must be WABISABI_VALIDATION_SIZE bytes.
  */
@@ -176,7 +191,7 @@ wabisabi_error_t wabisabi_client_create_real_request(
     const int64_t* amounts, int n_amounts,
     const uint8_t* creds_bytes, int n_creds,
     const uint8_t* rand_bytes,
-    uint8_t* req_out, int* req_len_out,
+    uint8_t* req_out, int req_out_cap, int* req_len_out,
     uint8_t val_out[WABISABI_VALIDATION_SIZE]);
 
 /**
@@ -187,13 +202,14 @@ wabisabi_error_t wabisabi_client_create_real_request(
  * resp_len      : byte length of resp_bytes.
  * val_bytes     : WABISABI_VALIDATION_SIZE bytes — validation state from the corresponding create call.
  * creds_out     : output buffer (WABISABI_CREDENTIAL_COUNT × WABISABI_CREDENTIAL_SIZE bytes).
+ * creds_out_cap : capacity of creds_out in bytes; returns WABISABI_ERR_BUFFER_TOO_SMALL if too small.
  * n_creds_out   : set to number of credentials on success (always WABISABI_CREDENTIAL_COUNT).
  */
 wabisabi_error_t wabisabi_client_handle_response(
     const uint8_t* iparams_bytes,
     const uint8_t* resp_bytes, int resp_len,
     const uint8_t val_bytes[WABISABI_VALIDATION_SIZE],
-    uint8_t* creds_out, int* n_creds_out);
+    uint8_t* creds_out, int creds_out_cap, int* n_creds_out);
 
 #ifdef __cplusplus
 }

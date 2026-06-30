@@ -55,10 +55,10 @@ public class WabiSabiClient
         var rand   = new byte[NativeWabi.RandSize];
         _rng.GetBytes(rand);
 
-        var reqOut = new byte[16 * 1024];
+        var reqOut = new byte[NativeWabi.MaxRequestSize];
         var valOut = new byte[NativeWabi.ValidationSize];
         int reqLen;
-        int rc = NativeWabi.ClientCreateZeroRequest(rand, reqOut, out reqLen, valOut);
+        int rc = NativeWabi.ClientCreateZeroRequest(rand, reqOut, reqOut.Length, out reqLen, valOut);
         if (rc != 0)
             throw new WabiSabiCryptoException(
                 WabiSabiCryptoErrorCode.ClientReceivedInvalidProofs,
@@ -103,7 +103,7 @@ public class WabiSabiClient
         var rand   = new byte[NativeWabi.RandSize];
         _rng.GetBytes(rand);
 
-        var reqOut = new byte[16 * 1024];
+        var reqOut = new byte[NativeWabi.MaxRequestSize];
         var valOut = new byte[NativeWabi.ValidationSize];
         int reqLen;
         int rc = NativeWabi.ClientCreateRealRequest(
@@ -112,7 +112,7 @@ public class WabiSabiClient
             amounts.ToArray(), amounts.Count,
             credsBytes, credsList.Length,
             rand,
-            reqOut, out reqLen,
+            reqOut, reqOut.Length, out reqLen,
             valOut);
 
         if (rc != 0)
@@ -161,7 +161,7 @@ public class WabiSabiClient
             _iparamsBytes,
             respBytes, respBytes.Length,
             valBytes,
-            credsOut, out nCreds);
+            credsOut, credsOut.Length, out nCreds);
 
         if (rc != 0)
             throw new WabiSabiCryptoException(
