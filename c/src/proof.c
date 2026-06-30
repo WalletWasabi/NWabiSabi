@@ -55,12 +55,21 @@ compute_public_nonce(wabisabi_ge_t* out, const wabisabi_equation_t* eq, const wa
 void
 wabisabi_prove(wabisabi_proof_t* out, wabisabi_transcript_t* transcript, const wabisabi_knowledge_t* knowledge, int n,
                const uint8_t* random_bytes, size_t rnd_len) {
+    /* Scratch for the dense generator matrix. Heap-allocated (≈1.7 MB) rather
+     * than a function-local `static` so that wabisabi_prove is reentrant /
+     * thread-safe: concurrent callers must not share this buffer. Too large for
+     * the stack (would overflow small worker-thread stacks). */
+    wabisabi_ge_t* gens = malloc((size_t)PROOF_MAX_EQUATIONS * PROOF_MAX_WITNESSES * sizeof(wabisabi_ge_t));
+    if (!gens) {
+        return;
+    }
+
     /* Step 1: commit all statements to transcript */
     for (int k = 0; k < n; k++) {
         const wabisabi_statement_t* stmt = &knowledge[k].statement;
 
         /* Collect all public points from equations */
-        static wabisabi_ge_t pub_pts[PROOF_MAX_EQUATIONS];
+        wabisabi_ge_t pub_pts[PROOF_MAX_EQUATIONS];
         int n_pub = 0;
         for (int e = 0; e < stmt->n_equations; e++) {
             pub_pts[n_pub++] = stmt->equations[e].public_point;
@@ -72,7 +81,6 @@ wabisabi_prove(wabisabi_proof_t* out, wabisabi_transcript_t* transcript, const w
          * equations × witnesses densely. For sparse, we expand to dense
          * for the transcript only.
          */
-        static wabisabi_ge_t gens[PROOF_MAX_EQUATIONS * PROOF_MAX_WITNESSES];
         int n_gen = 0;
         for (int e = 0; e < stmt->n_equations; e++) {
             /* Build dense row from sparse entries */
@@ -91,9 +99,11 @@ wabisabi_prove(wabisabi_proof_t* out, wabisabi_transcript_t* transcript, const w
         wabisabi_transcript_commit_statement(transcript, pub_pts, n_pub, gens, n_gen);
     }
 
+    free(gens);
+
     /* Step 2: for each knowledge, generate secret nonces and public nonces */
-    static wabisabi_scalar_t all_secret_nonces[PROOF_MAX_WITNESSES];
-    static wabisabi_ge_t all_public_nonces[PROOF_MAX_EQUATIONS];
+    wabisabi_scalar_t all_secret_nonces[PROOF_MAX_WITNESSES];
+    wabisabi_ge_t all_public_nonces[PROOF_MAX_EQUATIONS];
 
     for (int k = 0; k < n; k++) {
         const wabisabi_knowledge_t* kn = &knowledge[k];
@@ -147,11 +157,18 @@ wabisabi_verify(wabisabi_transcript_t* transcript, const wabisabi_statement_t* s
         return 0;
     }
 
+    /* Scratch for the dense generator matrix. Heap-allocated (≈1.7 MB) rather
+     * than a function-local `static` so that wabisabi_verify is reentrant /
+     * thread-safe: concurrent callers must not share this buffer. */
+    wabisabi_ge_t* gens = malloc((size_t)PROOF_MAX_EQUATIONS * PROOF_MAX_WITNESSES * sizeof(wabisabi_ge_t));
+    if (!gens) {
+        return 0;
+    }
+
     /* Step 1: commit all statements (same as in prove) */
     for (int k = 0; k < n_stmt; k++) {
         const wabisabi_statement_t* stmt = &statements[k];
-        static wabisabi_ge_t pub_pts[PROOF_MAX_EQUATIONS];
-        static wabisabi_ge_t gens[PROOF_MAX_EQUATIONS * PROOF_MAX_WITNESSES];
+        wabisabi_ge_t pub_pts[PROOF_MAX_EQUATIONS];
         int n_pub = 0, n_gen = 0;
         for (int e = 0; e < stmt->n_equations; e++) {
             pub_pts[n_pub++] = stmt->equations[e].public_point;
@@ -170,6 +187,8 @@ wabisabi_verify(wabisabi_transcript_t* transcript, const wabisabi_statement_t* s
         }
         wabisabi_transcript_commit_statement(transcript, pub_pts, n_pub, gens, n_gen);
     }
+
+    free(gens);
 
     /* Step 2: commit all public nonces */
     for (int k = 0; k < n_proof; k++) {
@@ -210,7 +229,7 @@ wabisabi_pedersen_commit(wabisabi_ge_t* out, const wabisabi_scalar_t* amount, co
 wabisabi_statement_t
 wabisabi_issuer_params_statement(const wabisabi_iparams_t* iparams, const wabisabi_mac_t* mac,
                                   const wabisabi_ge_t* ma) {
-    static wabisabi_statement_t stmt;
+    wabisabi_statement_t stmt;
     memset(&stmt, 0, sizeof(stmt));
     stmt.n_equations = 3;
     stmt.n_witnesses = 5; /* w, wp, x0, x1, ya */
@@ -318,7 +337,7 @@ wabisabi_credential_present(const wabisabi_mac_t* mac, int64_t value, const wabi
 wabisabi_statement_t
 wabisabi_show_credential_statement(const wabisabi_presentation_t* p, const wabisabi_ge_t* z_point,
                                    const wabisabi_iparams_t* iparams) {
-    static wabisabi_statement_t stmt;
+    wabisabi_statement_t stmt;
     memset(&stmt, 0, sizeof(stmt));
     stmt.n_equations = 4;
     stmt.n_witnesses = 5; /* z, z0=-t*z, t, a, r */
@@ -358,7 +377,7 @@ wabisabi_show_credential_knowledge(const wabisabi_presentation_t* p, const wabis
     wabisabi_ge_t z_point;
     wabisabi_ge_mul(&z_point, z, &iparams->i);
 
-    static wabisabi_knowledge_t kn;
+    wabisabi_knowledge_t kn;
     kn.statement = wabisabi_show_credential_statement(p, &z_point, iparams);
 
     /* Witness: (z, z0 = -(t*z), t, a, r) */
@@ -388,7 +407,7 @@ wabisabi_show_credential_knowledge(const wabisabi_presentation_t* p, const wabis
 
 wabisabi_statement_t
 wabisabi_balance_proof_statement(const wabisabi_ge_t* balance_commitment) {
-    static wabisabi_statement_t stmt;
+    wabisabi_statement_t stmt;
     memset(&stmt, 0, sizeof(stmt));
     stmt.n_equations = 1;
     stmt.n_witnesses = 2; /* z_sum, r_delta_sum */
@@ -404,7 +423,7 @@ wabisabi_balance_proof_statement(const wabisabi_ge_t* balance_commitment) {
 wabisabi_knowledge_t
 wabisabi_balance_proof_knowledge(const wabisabi_scalar_t* z_sum, const wabisabi_scalar_t* r_delta_sum) {
     /* Balance commitment = z_sum*Ga + r_delta_sum*Gh */
-    static wabisabi_knowledge_t kn;
+    wabisabi_knowledge_t kn;
 
     wabisabi_ge_t zGa, rGh;
     wabisabi_ge_mul(&zGa, z_sum, &WABISABI_Ga);
@@ -427,7 +446,7 @@ wabisabi_zero_proof_statement(const wabisabi_ge_t* ma) {
 
 wabisabi_knowledge_t
 wabisabi_zero_proof_knowledge(const wabisabi_ge_t* ma, const wabisabi_scalar_t* r) {
-    static wabisabi_knowledge_t kn;
+    wabisabi_knowledge_t kn;
     kn.statement = wabisabi_zero_proof_statement(ma);
     kn.witness[0] = *r;
     return kn;
@@ -439,7 +458,7 @@ wabisabi_statement_t
 wabisabi_range_proof_statement(const wabisabi_ge_t* ma, const wabisabi_ge_t* bit_commitments, int width) {
     assert(width >= 0 && width <= WABISABI_MAX_RANGE_WIDTH);
 
-    static wabisabi_statement_t stmt;
+    wabisabi_statement_t stmt;
     memset(&stmt, 0, sizeof(stmt));
 
     /* rows = 2*width + 1 (or 1 if width==0) */
@@ -509,7 +528,7 @@ wabisabi_range_proof_knowledge(const wabisabi_scalar_t* amount, const wabisabi_s
                                const uint8_t* random_bytes, size_t rnd_len) {
     assert(width >= 0 && width <= WABISABI_MAX_RANGE_WIDTH);
 
-    static wabisabi_range_proof_t rp;
+    wabisabi_range_proof_t rp;
     rp.width = width;
 
     wabisabi_ge_t ma;
