@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using WabiSabi.Crypto;
+using WabiSabi.CredentialRequesting;
 using Xunit;
 using NativeClient = WabiSabi.Native.WabiSabiClient;
 using CsClient     = WabiSabi.Crypto.WabiSabiClient;
@@ -94,6 +95,42 @@ public class LargeRangeWidthTests
 
         Assert.Equal(2, creds.Length);
         Assert.Equal(Amounts.Sum(), creds.Sum(c => c.Value));
+    }
+
+    // Reproduces the WalletWasabi output-registration flow: a managed client first
+    // obtains real credentials, then issues a *presentation-only* request (presents the
+    // credentials, requests none) against the native issuer. This shape — Delta < 0 with
+    // zero requested credentials — was unrepresentable in the FFI wire format and made the
+    // native issuer fail with a parse error (WABISABI_ERR_PARSE). The native issuer must
+    // verify it and return an empty (zero-credential) response.
+    [Fact]
+    public void PresentationOnly_CSharpClient_NativeIssuer()
+    {
+        var sk      = new CredentialIssuerSecretKey(ChainRng("pres-cs-sk"));
+        var iparams = sk.ComputeCredentialIssuerParameters();
+
+        var client = new CsClient(iparams, ChainRng("pres-cs-client"), WalletWasabiMaxAmount);
+        var issuer = new NativeIssuer(sk, ChainRng("pres-native-issuer"), WalletWasabiMaxAmount);
+
+        // Bootstrap then obtain real credentials worth Amounts.
+        var zero      = client.CreateRequestForZeroAmount();
+        var zeroResp  = issuer.HandleRequest(zero.CredentialsRequest);
+        var zeroCreds = client.HandleResponse(zeroResp, zero.CredentialsResponseValidation).ToArray();
+
+        var real      = client.CreateRequest(Amounts, zeroCreds, CancellationToken.None);
+        var realResp  = issuer.HandleRequest(real.CredentialsRequest);
+        var creds     = client.HandleResponse(realResp, real.CredentialsResponseValidation).ToArray();
+
+        // Presentation-only request: present the credentials, request nothing.
+        var present     = client.CreateRequest(creds, CancellationToken.None);
+        Assert.True(present.CredentialsRequest.IsPresentationOnlyRequest());
+
+        var presentResp = issuer.HandleRequest(present.CredentialsRequest);
+        Assert.Empty(presentResp.IssuedCredentials);
+        Assert.Empty(presentResp.Proofs);
+
+        // The balance returned to zero after the presented amount was spent.
+        Assert.Equal(0L, issuer.Balance);
     }
 
     // The native client emits a ZeroCredentialsRequest; round-trip it through the wire
