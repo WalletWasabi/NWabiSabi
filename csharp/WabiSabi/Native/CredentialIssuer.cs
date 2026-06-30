@@ -92,9 +92,7 @@ public class CredentialIssuer
                     _mstateOutBuf, _mstateOutBuf.Length, out mstateOutLen);
 
             if (rc != 0)
-                throw new WabiSabiCryptoException(
-                    WabiSabiCryptoErrorCode.CoordinatorReceivedInvalidProofs,
-                    $"C issuer returned error code {rc}.");
+                throw new WabiSabiCryptoException(MapError(rc), $"C issuer returned error code {rc}.");
 
             // Store compact copy of the updated mutable state.
             _currentMstate = _mstateOutBuf[..mstateOutLen];
@@ -102,6 +100,22 @@ public class CredentialIssuer
             return WireFormat.DeserializeResponse(respOut[..respLen]);
         }
     }
+
+    /// <summary>
+    /// Maps a C FFI error code (see WABISABI_ERR_* in wabisabi_ffi.h) to the matching
+    /// <see cref="WabiSabiCryptoErrorCode"/> the managed <see cref="WabiSabi.Crypto.CredentialIssuer"/>
+    /// would have thrown, so callers that branch on the specific error keep working.
+    /// </summary>
+    private static WabiSabiCryptoErrorCode MapError(int rc) => rc switch
+    {
+        4  => WabiSabiCryptoErrorCode.CoordinatorReceivedInvalidProofs, // INVALID_PROOF
+        5  => WabiSabiCryptoErrorCode.InvalidNumberOfRequestedCredentials, // INVALID_CRED_COUNT
+        6  => WabiSabiCryptoErrorCode.InvalidBitCommitment,            // INVALID_BIT_COMMITMENT
+        7  => WabiSabiCryptoErrorCode.SerialNumberDuplicated,          // SERIAL_DUPLICATED
+        8  => WabiSabiCryptoErrorCode.SerialNumberAlreadyUsed,         // SERIAL_REUSED
+        9  => WabiSabiCryptoErrorCode.NegativeBalance,                 // NEGATIVE_BALANCE
+        _  => WabiSabiCryptoErrorCode.CoordinatorReceivedInvalidProofs,
+    };
 
     /// <summary>Reads the balance from the compact serialized mutable state.</summary>
     private static long ReadBalance(byte[] mstate)

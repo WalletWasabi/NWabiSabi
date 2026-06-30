@@ -211,6 +211,9 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
     }
 
     out_req->delta = total_requested - total_presented;
+    /* The C client always requests the full set of credentials (zero-padded);
+     * it does not emit presentation-only requests. */
+    out_req->n_requested = WABISABI_CREDENTIAL_COUNT;
     out_req->n_proofs = n_knowledge;
 
     /* Build and advance the prove transcript */
@@ -254,9 +257,12 @@ wabisabi_error_t
 wabisabi_client_state_handle_response(wabisabi_client_state_t* c, const wabisabi_response_t* response,
                                       const wabisabi_response_validation_t* val,
                                       wabisabi_credential_t out_credentials[WABISABI_CREDENTIAL_COUNT]) {
+    /* A presentation-only request issues no credentials and carries no proofs. */
+    int n = response->n_issued;
+
     /* Verify issuer parameter proofs */
     wabisabi_statement_t* statements = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_statement_t));
-    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+    for (int i = 0; i < n; i++) {
         statements[i] = wabisabi_issuer_params_statement(&c->iparams, &response->issued[i], &val->requested[i].ma);
     }
 
@@ -264,8 +270,7 @@ wabisabi_client_state_handle_response(wabisabi_client_state_t* c, const wabisabi
     wabisabi_transcript_t verify_transcript;
     wabisabi_transcript_clone(&verify_transcript, &val->transcript);
 
-    if (!wabisabi_verify(&verify_transcript, statements, WABISABI_CREDENTIAL_COUNT, response->proofs,
-                         WABISABI_CREDENTIAL_COUNT)) {
+    if (!wabisabi_verify(&verify_transcript, statements, n, response->proofs, n)) {
         free(statements);
         return WABISABI_ERR_INVALID_PROOF;
     }
@@ -273,7 +278,7 @@ wabisabi_client_state_handle_response(wabisabi_client_state_t* c, const wabisabi
     free(statements);
 
     /* Build credentials from issued MACs */
-    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+    for (int i = 0; i < n; i++) {
         out_credentials[i].value = val->requested[i].value;
         out_credentials[i].randomness = val->requested[i].randomness;
         out_credentials[i].mac = response->issued[i];

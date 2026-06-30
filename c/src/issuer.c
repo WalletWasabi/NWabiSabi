@@ -162,14 +162,21 @@ wabisabi_issuer_state_handle_zero(wabisabi_issuer_state_t* issuer, const wabisab
 
     free(issue_knowledge);
 
+    resp->n_issued = WABISABI_CREDENTIAL_COUNT;
     return WABISABI_OK;
 }
 
 wabisabi_error_t
 wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisabi_real_request_t* req,
                                   wabisabi_response_t* resp, const uint8_t* random_bytes) {
+    /* A real request either requests no credentials (presentation-only, e.g.
+     * output registration) or the full WABISABI_CREDENTIAL_COUNT. */
+    if (req->n_requested != 0 && req->n_requested != WABISABI_CREDENTIAL_COUNT) {
+        return WABISABI_ERR_INVALID_CRED_COUNT;
+    }
+
     /* Validate bit commitment count */
-    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+    for (int i = 0; i < req->n_requested; i++) {
         if (req->requested[i].n_bit_commitments != issuer->range_proof_width) {
             return WABISABI_ERR_INVALID_BIT_COMMITMENT;
         }
@@ -220,8 +227,8 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
         statements[n_stmt++] = wabisabi_show_credential_statement(&req->presented[i], &z, &issuer->iparams);
     }
 
-    /* Range proofs */
-    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+    /* Range proofs (none for a presentation-only request) */
+    for (int i = 0; i < req->n_requested; i++) {
         statements[n_stmt++] = wabisabi_range_proof_statement(&req->requested[i].ma, req->requested[i].bit_commitments,
                                                               issuer->range_proof_width);
     }
@@ -232,6 +239,8 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
         wabisabi_ge_t sum_ma = {.is_infinity = 1};
         for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
             wabisabi_ge_add(&sum_ca, &sum_ca, &req->presented[i].ca);
+        }
+        for (int i = 0; i < req->n_requested; i++) {
             wabisabi_ge_add(&sum_ma, &sum_ma, &req->requested[i].ma);
         }
 
@@ -279,9 +288,10 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
 
     issuer->balance += req->delta;
 
-    /* Continue with post-verification transcript (don't rebuild) */
+    /* Continue with post-verification transcript (don't rebuild).
+     * A presentation-only request (n_requested == 0) issues no credentials. */
     wabisabi_knowledge_t* issue_knowledge = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_knowledge_t));
-    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+    for (int i = 0; i < req->n_requested; i++) {
         uint8_t t_bytes[WABISABI_SCALAR_SIZE];
         uint8_t seed[WABISABI_SCALAR_SIZE + 1];
         memcpy(seed, random_bytes, WABISABI_SCALAR_SIZE);
@@ -293,10 +303,11 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
         issue_credential(&resp->issued[i], &issue_knowledge[i], issuer, &req->requested[i].ma, t_bytes);
     }
 
-    wabisabi_prove(resp->proofs, &transcript, issue_knowledge, WABISABI_CREDENTIAL_COUNT, random_bytes,
+    wabisabi_prove(resp->proofs, &transcript, issue_knowledge, req->n_requested, random_bytes,
                    WABISABI_SCALAR_SIZE);
 
     free(issue_knowledge);
 
+    resp->n_issued = req->n_requested;
     return WABISABI_OK;
 }

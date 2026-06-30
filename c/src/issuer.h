@@ -23,6 +23,9 @@ typedef struct {
 typedef struct {
     int64_t delta; /* amount delta */
     wabisabi_presentation_t presented[WABISABI_CREDENTIAL_COUNT];
+    /* Number of requested credentials: 0 for a presentation-only request
+     * (output registration) or WABISABI_CREDENTIAL_COUNT for a normal one. */
+    int n_requested;
     wabisabi_issuance_request_t requested[WABISABI_CREDENTIAL_COUNT];
     wabisabi_proof_t proofs[/* presentations + range + balance */
                             WABISABI_CREDENTIAL_COUNT * 2 + 1];
@@ -31,6 +34,8 @@ typedef struct {
 
 /* Coordinator response */
 typedef struct {
+    /* Number of issued credentials; mirrors the request's n_requested. */
+    int n_issued;
     wabisabi_mac_t issued[WABISABI_CREDENTIAL_COUNT];
     wabisabi_proof_t proofs[WABISABI_CREDENTIAL_COUNT]; /* issuer params proofs */
 } wabisabi_response_t;

@@ -14,8 +14,13 @@
  *
  *   ZeroRequest  : [Ma_0][Ma_1][proof_0][proof_1]
  *   RealRequest  : [delta:VALUE_SIZE][pres_0:PRESENTATION_SIZE][pres_1:PRESENTATION_SIZE]
- *                  [req_0][req_1][n_proofs:1][proofs...]
- *   Response     : [mac_0:MAC_SIZE][mac_1:MAC_SIZE][proof_0][proof_1]
+ *                  [n_requested:1][req_0]...[req_{n-1}][n_proofs:1][proofs...]
+ *                  n_requested is 0 for a presentation-only request (output
+ *                  registration: presents credentials, requests none) or
+ *                  WABISABI_CREDENTIAL_COUNT for a normal request.
+ *   Response     : [n_issued:1][mac_0]...[mac_{n-1}][proof_0]...[proof_{n-1}]
+ *                  n_issued matches the request's n_requested (0 issued
+ *                  credentials for a presentation-only request).
  *
  *   ValidationState (WABISABI_VALIDATION_SIZE bytes):
  *     [strobe_state:200][strobe_pos:1][strobe_pos_begin:1][strobe_cur_flags:1]

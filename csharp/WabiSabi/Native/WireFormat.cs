@@ -23,8 +23,9 @@ namespace WabiSabi.Native;
 ///   Presentation : [Ca][Cx0][Cx1][CV][S]          = PRESENTATION_SIZE bytes
 ///   Credential   : [value:VALUE_SIZE LE][randomness:SCALAR_SIZE][mac:MAC_SIZE] = CREDENTIAL_SIZE bytes
 ///   ZeroRequest  : [Ma_0][Ma_1][proof_0][proof_1]
-///   RealRequest  : [delta:VALUE_SIZE LE][pres_0:PRESENTATION_SIZE][pres_1:PRESENTATION_SIZE][req_0][req_1][n_proofs:1][proofs...]
-///   Response     : [mac_0:MAC_SIZE][mac_1:MAC_SIZE][proof_0][proof_1]
+///   RealRequest  : [delta:VALUE_SIZE LE][pres_0:PRESENTATION_SIZE][pres_1:PRESENTATION_SIZE][n_requested:1][req_0]...[n_proofs:1][proofs...]
+///                  (n_requested is 0 for a presentation-only request, e.g. output registration)
+///   Response     : [n_issued:1][mac_0]...[mac_{n-1}][proof_0]...[proof_{n-1}]
 /// </summary>
 internal static class WireFormat
 {
@@ -154,7 +155,11 @@ internal static class WireFormat
             bytes.AddRange(WriteGe(p.S));
         }
 
-        foreach (var r in req.Requested)
+        // A presentation-only request (output registration) has no requested
+        // credentials; the count distinguishes it from a normal request.
+        var requestedList = req.Requested.ToArray();
+        bytes.Add((byte)requestedList.Length);
+        foreach (var r in requestedList)
         {
             bytes.AddRange(WriteGe(r.Ma));
             foreach (var bc in r.BitCommitments)
@@ -188,8 +193,9 @@ internal static class WireFormat
                 ReadGe(bytes, ref off), ReadGe(bytes, ref off),
                 ReadGe(bytes, ref off));
 
-        var requested = new IssuanceRequest[CredentialCount];
-        for (int i = 0; i < CredentialCount; i++)
+        int nRequested = bytes[off++];
+        var requested = new IssuanceRequest[nRequested];
+        for (int i = 0; i < nRequested; i++)
         {
             var ma   = ReadGe(bytes, ref off);
             var bits = new GroupElement[rangeWidth];
@@ -214,7 +220,10 @@ internal static class WireFormat
     public static byte[] SerializeResponse(CredentialsResponse resp)
     {
         var bytes = new List<byte>();
-        foreach (var mac in resp.IssuedCredentials)
+        var macs = resp.IssuedCredentials.ToArray();
+        // n_issued: 0 for a presentation-only request's response.
+        bytes.Add((byte)macs.Length);
+        foreach (var mac in macs)
             bytes.AddRange(WriteMac(mac));
         foreach (var proof in resp.Proofs)
             bytes.AddRange(WriteProof(proof));
@@ -227,12 +236,13 @@ internal static class WireFormat
     public static CredentialsResponse DeserializeResponse(byte[] bytes)
     {
         int off = 0;
-        var macs   = new MAC[CredentialCount];
-        var proofs = new Proof[CredentialCount];
+        int nIssued = bytes[off++];
+        var macs   = new MAC[nIssued];
+        var proofs = new Proof[nIssued];
 
-        for (int i = 0; i < CredentialCount; i++)
+        for (int i = 0; i < nIssued; i++)
             macs[i] = ReadMac(bytes, ref off);
-        for (int i = 0; i < CredentialCount; i++)
+        for (int i = 0; i < nIssued; i++)
             proofs[i] = ReadProof(bytes, ref off);
 
         return new CredentialsResponse(macs, proofs);
