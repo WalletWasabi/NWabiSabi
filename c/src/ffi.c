@@ -75,6 +75,12 @@ write_proof(uint8_t* buf, const wabisabi_proof_t* p) {
     return off;
 }
 
+/* Serialized size of a proof, in bytes (mirrors write_proof). */
+static int
+proof_serialized_size(const wabisabi_proof_t* p) {
+    return 2 + p->n_nonces * WABISABI_GE_SIZE + p->n_responses * WABISABI_SCALAR_SIZE;
+}
+
 /* Returns bytes consumed, or -1 on error. */
 static int
 read_proof(const uint8_t* buf, int buf_remaining, wabisabi_proof_t* p) {
@@ -139,6 +145,12 @@ write_issuance_request(uint8_t* buf, const wabisabi_issuance_request_t* req) {
         write_ge(buf + off, &req->bit_commitments[i]);
     }
     return off;
+}
+
+/* Serialized size of an issuance request, in bytes (mirrors write_issuance_request). */
+static int
+issuance_request_serialized_size(const wabisabi_issuance_request_t* req) {
+    return WABISABI_GE_SIZE * (1 + req->n_bit_commitments);
 }
 
 /* n_bits must be caller-validated against WABISABI_MAX_RANGE_WIDTH before calling. */
@@ -294,6 +306,12 @@ read_validation_state(const uint8_t* buf, wabisabi_response_validation_t* val) {
  *
  * Returns number of bytes written: 12 + count * WABISABI_GE_SIZE.
  */
+/* Serialized size of the mutable issuer state, in bytes (mirrors write_mutable_state). */
+static int
+mutable_state_serialized_size(const wabisabi_issuer_state_t* issuer) {
+    return 12 + issuer->serial_numbers.count * WABISABI_GE_SIZE;
+}
+
 static int
 write_mutable_state(uint8_t* buf, const wabisabi_issuer_state_t* issuer) {
     int64_t b = issuer->balance;
@@ -419,8 +437,8 @@ wabisabi_issuer_handle_zero(const uint8_t* sk_bytes, int64_t max_amount,
                             const uint8_t* mstate_in, int mstate_in_len,
                             const uint8_t* req_bytes, int req_len,
                             const uint8_t* rand_bytes,
-                            uint8_t* resp_out, int* resp_len_out,
-                            uint8_t* mstate_out, int* mstate_out_len) {
+                            uint8_t* resp_out, int resp_out_cap, int* resp_len_out,
+                            uint8_t* mstate_out, int mstate_out_cap, int* mstate_out_len) {
     if (!sk_bytes || !req_bytes || !rand_bytes || !resp_out || !resp_len_out
         || !mstate_out || !mstate_out_len) {
         return WABISABI_ERR_NULL_PTR;
@@ -459,6 +477,15 @@ wabisabi_issuer_handle_zero(const uint8_t* sk_bytes, int64_t max_amount,
         return err;
     }
 
+    int resp_needed = WABISABI_CREDENTIAL_COUNT * WABISABI_MAC_SIZE;
+    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+        resp_needed += proof_serialized_size(&resp.proofs[i]);
+    }
+    if (resp_out_cap < resp_needed
+        || mstate_out_cap < mutable_state_serialized_size(&issuer)) {
+        return WABISABI_ERR_BUFFER_TOO_SMALL;
+    }
+
     off = 0;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         off += write_mac(resp_out + off, &resp.issued[i]);
@@ -486,8 +513,8 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
                             const uint8_t* mstate_in, int mstate_in_len,
                             const uint8_t* req_bytes, int req_len,
                             const uint8_t* rand_bytes,
-                            uint8_t* resp_out, int* resp_len_out,
-                            uint8_t* mstate_out, int* mstate_out_len) {
+                            uint8_t* resp_out, int resp_out_cap, int* resp_len_out,
+                            uint8_t* mstate_out, int mstate_out_cap, int* mstate_out_len) {
     if (!sk_bytes || !req_bytes || !rand_bytes || !resp_out || !resp_len_out
         || !mstate_out || !mstate_out_len) {
         return WABISABI_ERR_NULL_PTR;
@@ -559,6 +586,15 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
         return err;
     }
 
+    int resp_needed = WABISABI_CREDENTIAL_COUNT * WABISABI_MAC_SIZE;
+    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+        resp_needed += proof_serialized_size(&resp.proofs[i]);
+    }
+    if (resp_out_cap < resp_needed
+        || mstate_out_cap < mutable_state_serialized_size(&issuer)) {
+        return WABISABI_ERR_BUFFER_TOO_SMALL;
+    }
+
     off = 0;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         off += write_mac(resp_out + off, &resp.issued[i]);
@@ -582,7 +618,7 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
  */
 wabisabi_error_t
 wabisabi_client_create_zero_request(const uint8_t* rand_bytes,
-                                    uint8_t* req_out, int* req_len_out,
+                                    uint8_t* req_out, int req_out_cap, int* req_len_out,
                                     uint8_t val_out[WABISABI_VALIDATION_SIZE]) {
     if (!rand_bytes || !req_out || !req_len_out || !val_out) {
         return WABISABI_ERR_NULL_PTR;
@@ -597,6 +633,14 @@ wabisabi_client_create_zero_request(const uint8_t* rand_bytes,
     wabisabi_zero_request_t req;
     wabisabi_response_validation_t val;
     wabisabi_client_state_create_zero_request(&client, rand_bytes, &req, &val);
+
+    int req_needed = WABISABI_CREDENTIAL_COUNT * WABISABI_GE_SIZE;
+    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+        req_needed += proof_serialized_size(&req.proofs[i]);
+    }
+    if (req_out_cap < req_needed) {
+        return WABISABI_ERR_BUFFER_TOO_SMALL;
+    }
 
     int off = 0;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
@@ -622,7 +666,7 @@ wabisabi_client_create_real_request(const uint8_t* iparams_bytes, int64_t max_am
                                     const int64_t* amounts, int n_amounts,
                                     const uint8_t* creds_bytes, int n_creds,
                                     const uint8_t* rand_bytes,
-                                    uint8_t* req_out, int* req_len_out,
+                                    uint8_t* req_out, int req_out_cap, int* req_len_out,
                                     uint8_t val_out[WABISABI_VALIDATION_SIZE]) {
     if (!iparams_bytes || !creds_bytes || !rand_bytes || !req_out || !req_len_out || !val_out) {
         return WABISABI_ERR_NULL_PTR;
@@ -657,6 +701,19 @@ wabisabi_client_create_real_request(const uint8_t* iparams_bytes, int64_t max_am
     wabisabi_client_state_create_real_request(&client, amounts, n_amounts, creds, n_creds,
                                               rand_bytes, &req, &val);
     secure_zero(creds, sizeof(creds));
+
+    int req_needed = WABISABI_VALUE_SIZE
+                   + WABISABI_CREDENTIAL_COUNT * WABISABI_PRESENTATION_SIZE
+                   + 1; /* n_proofs byte */
+    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+        req_needed += issuance_request_serialized_size(&req.requested[i]);
+    }
+    for (int i = 0; i < req.n_proofs; i++) {
+        req_needed += proof_serialized_size(&req.proofs[i]);
+    }
+    if (req_out_cap < req_needed) {
+        return WABISABI_ERR_BUFFER_TOO_SMALL;
+    }
 
     int off = 0;
 
@@ -694,7 +751,7 @@ wabisabi_error_t
 wabisabi_client_handle_response(const uint8_t* iparams_bytes,
                                 const uint8_t* resp_bytes, int resp_len,
                                 const uint8_t val_bytes[WABISABI_VALIDATION_SIZE],
-                                uint8_t* creds_out, int* n_creds_out) {
+                                uint8_t* creds_out, int creds_out_cap, int* n_creds_out) {
     if (!iparams_bytes || !resp_bytes || !val_bytes || !creds_out || !n_creds_out) {
         return WABISABI_ERR_NULL_PTR;
     }
@@ -702,6 +759,9 @@ wabisabi_client_handle_response(const uint8_t* iparams_bytes,
     int min_len = WABISABI_CREDENTIAL_COUNT * WABISABI_MAC_SIZE;
     if (resp_len < min_len) {
         return WABISABI_ERR_INVALID_LENGTH;
+    }
+    if (creds_out_cap < WABISABI_CREDENTIAL_COUNT * WABISABI_CREDENTIAL_SIZE) {
+        return WABISABI_ERR_BUFFER_TOO_SMALL;
     }
 
     wabisabi_iparams_t ip;

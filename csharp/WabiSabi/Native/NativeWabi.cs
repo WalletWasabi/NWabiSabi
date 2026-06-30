@@ -50,6 +50,14 @@ internal static class NativeWabi
     /// <summary>Maximum size of the serialized mutable issuer state in bytes.</summary>
     public const int IssuerMStateMaxSize = 8 + 4 + IssuerMaxSerials * GeSize;
 
+    /// <summary>
+    /// Recommended size (and upper bound) for request/response output buffers, mirroring
+    /// the C <c>WABISABI_MAX_REQUEST_SIZE</c>. A real request grows with the range-proof
+    /// width (≈21 KiB at the maximum width), so the legacy 16 KiB is NOT enough — a large
+    /// <c>maxAmount</c> would overrun it. 64 KiB is always sufficient.
+    /// </summary>
+    public const int MaxRequestSize = 64 * 1024;
+
     // ---- Initialization ----
 
     [DllImport(Lib, EntryPoint = "wabisabi_init", CallingConvention = CallingConvention.Cdecl)]
@@ -88,8 +96,8 @@ internal static class NativeWabi
         [In] byte[] mstateIn, int mstateInLen,
         [In] byte[] reqBytes, int reqLen,
         [In] byte[] randBytes,
-        [Out] byte[] respOut, out int respLenOut,
-        [Out] byte[] mstateOut, out int mstateOutLen);
+        [Out] byte[] respOut, int respOutCap, out int respLenOut,
+        [Out] byte[] mstateOut, int mstateOutCap, out int mstateOutLen);
 
     /// <summary>Process a real credential request. Same parameters as IssuerHandleZero.</summary>
     [DllImport(Lib, EntryPoint = "wabisabi_issuer_handle_real", CallingConvention = CallingConvention.Cdecl)]
@@ -99,8 +107,8 @@ internal static class NativeWabi
         [In] byte[] mstateIn, int mstateInLen,
         [In] byte[] reqBytes, int reqLen,
         [In] byte[] randBytes,
-        [Out] byte[] respOut, out int respLenOut,
-        [Out] byte[] mstateOut, out int mstateOutLen);
+        [Out] byte[] respOut, int respOutCap, out int respLenOut,
+        [Out] byte[] mstateOut, int mstateOutCap, out int mstateOutLen);
 
     // ---- Client (stateless) ----
 
@@ -114,7 +122,7 @@ internal static class NativeWabi
     [DllImport(Lib, EntryPoint = "wabisabi_client_create_zero_request", CallingConvention = CallingConvention.Cdecl)]
     public static extern int ClientCreateZeroRequest(
         [In] byte[] randBytes,
-        [Out] byte[] reqOut, out int reqLenOut,
+        [Out] byte[] reqOut, int reqOutCap, out int reqLenOut,
         [Out] byte[] valOut);
 
     /// <summary>
@@ -137,7 +145,7 @@ internal static class NativeWabi
         [In] long[] amounts, int nAmounts,
         [In] byte[] credsBytes, int nCreds,
         [In] byte[] randBytes,
-        [Out] byte[] reqOut, out int reqLenOut,
+        [Out] byte[] reqOut, int reqOutCap, out int reqLenOut,
         [Out] byte[] valOut);
 
     /// <summary>
@@ -154,5 +162,5 @@ internal static class NativeWabi
         [In] byte[] iparamsBytes,
         [In] byte[] respBytes, int respLen,
         [In] byte[] valBytes,
-        [Out] byte[] credsOut, out int nCredsOut);
+        [Out] byte[] credsOut, int credsOutCap, out int nCredsOut);
 }

@@ -198,10 +198,10 @@ public class BinaryCompatibilityTests
 
         // Use the stateless C API directly to hold the raw credential bytes.
         var clientRand = ChainRng("cred-native-client").GetBytes(NativeWabi.RandSize);
-        var reqOut     = new byte[16 * 1024];
+        var reqOut     = new byte[NativeWabi.MaxRequestSize];
         var valOut     = new byte[NativeWabi.ValidationSize];
         int reqLen;
-        Assert.Equal(0, NativeWabi.ClientCreateZeroRequest(clientRand, reqOut, out reqLen, valOut));
+        Assert.Equal(0, NativeWabi.ClientCreateZeroRequest(clientRand, reqOut, reqOut.Length, out reqLen, valOut));
 
         // C# issuer processes the native zero request.
         var nativeZeroReq = WireFormat.DeserializeZeroRequest(reqOut[..reqLen]);
@@ -213,7 +213,7 @@ public class BinaryCompatibilityTests
         var credBuffer = new byte[NativeWabi.CredentialCount * NativeWabi.CredentialSize];
         int nCreds;
         Assert.Equal(0, NativeWabi.ClientHandleResponse(
-            FixedIparamsBytes, respBytes, respBytes.Length, valOut, credBuffer, out nCreds));
+            FixedIparamsBytes, respBytes, respBytes.Length, valOut, credBuffer, credBuffer.Length, out nCreds));
         Assert.Equal(NativeWabi.CredentialCount, nCreds);
 
         // C# WireFormat parses the raw C bytes, then re-serialises them.

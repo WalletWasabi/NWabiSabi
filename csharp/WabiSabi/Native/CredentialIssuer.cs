@@ -70,7 +70,7 @@ public class CredentialIssuer
         var rand    = new byte[NativeWabi.RandSize];
         _rng.GetBytes(rand);
 
-        var respOut = new byte[16 * 1024];
+        var respOut = new byte[NativeWabi.MaxRequestSize];
 
         lock (_lock)
         {
@@ -81,15 +81,15 @@ public class CredentialIssuer
                     _currentMstate, _currentMstate.Length,
                     reqBytes, reqBytes.Length,
                     rand,
-                    respOut, out respLen,
-                    _mstateOutBuf, out mstateOutLen)
+                    respOut, respOut.Length, out respLen,
+                    _mstateOutBuf, _mstateOutBuf.Length, out mstateOutLen)
                 : NativeWabi.IssuerHandleReal(
                     _skBytes, MaxAmount,
                     _currentMstate, _currentMstate.Length,
                     reqBytes, reqBytes.Length,
                     rand,
-                    respOut, out respLen,
-                    _mstateOutBuf, out mstateOutLen);
+                    respOut, respOut.Length, out respLen,
+                    _mstateOutBuf, _mstateOutBuf.Length, out mstateOutLen);
 
             if (rc != 0)
                 throw new WabiSabiCryptoException(
