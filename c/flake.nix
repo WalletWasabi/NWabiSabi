@@ -23,12 +23,12 @@
             !(builtins.elem (baseNameOf path) [ "build" "result" ".direnv" ]);
         };
 
-        # secp256k1 v0.5.1 source — same version pinned in CMakeLists.txt
+        # secp256k1 v0.7.1 source — same version pinned in CMakeLists.txt
         secp256k1-src = pkgs.fetchFromGitHub {
           owner = "bitcoin-core";
           repo  = "secp256k1";
-          rev   = "v0.5.1";
-          hash  = "sha256-IYvvBob8e82EiPLX9yA8fd+KWrMri1rI5csp81rAdrg=";
+          rev   = "v0.7.1";
+          hash  = "sha256-DnBgetf+98n7B1JGtyTdxyc+yQ51A3+ueTIPPSWCm4E=";
         };
 
         # ------------------------------------------------------------------ #

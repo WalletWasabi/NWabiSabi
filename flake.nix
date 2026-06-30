@@ -16,12 +16,12 @@
         };
         pkgsUnfree = import nixpkgs { system = "x86_64-linux"; config.allowUnfree = true; };
 
-        # secp256k1 v0.5.1 source — same version pinned in c/CMakeLists.txt
+        # secp256k1 v0.7.1 source — same version pinned in c/CMakeLists.txt
         secp256k1-src = pkgs.fetchFromGitHub {
           owner = "bitcoin-core";
           repo  = "secp256k1";
-          rev   = "v0.5.1";
-          hash  = "sha256-IYvvBob8e82EiPLX9yA8fd+KWrMri1rI5csp81rAdrg=";
+          rev   = "v0.7.1";
+          hash  = "sha256-DnBgetf+98n7B1JGtyTdxyc+yQ51A3+ueTIPPSWCm4E=";
         };
 
         # C source filtered to exclude build artefacts
@@ -70,7 +70,7 @@
           doCheck    = true;
           checkPhase = ''
             runHook preCheck
-            LD_LIBRARY_PATH=_build:_build/_deps/secp256k1-build/src ./_build/wabisabi_test
+            LD_LIBRARY_PATH=_build ./_build/wabisabi_test
             runHook postCheck
           '';
 
@@ -297,8 +297,8 @@
             shellHook = ''
               export SECP256K1_SOURCE_DIR="${secp256k1-src}"
               export PYTHONPATH="$PWD/bindings/python''${PYTHONPATH:+:$PYTHONPATH}"
-              # libwabisabi.so links libsecp256k1.so dynamically; expose both build dirs.
-              export LD_LIBRARY_PATH="$PWD/c/build:$PWD/c/build/_deps/secp256k1-build/src''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              # secp256k1 is statically embedded in libwabisabi.so; only c/build is needed.
+              export LD_LIBRARY_PATH="$PWD/c/build''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
               echo ""
               echo "  WabiSabi Python dev shell"
@@ -344,7 +344,7 @@
             DOTNET_SYSTEM_GLOBALIZATION_INVARIANT = 1;
 
             shellHook = ''
-              export LD_LIBRARY_PATH="$PWD/c/build:$PWD/c/build/_deps/secp256k1-build/src:${pkgs.lib.makeLibraryPath dotnetLibs}"
+              export LD_LIBRARY_PATH="$PWD/c/build:${pkgs.lib.makeLibraryPath dotnetLibs}"
               export SECP256K1_SOURCE_DIR="${secp256k1-src}"
               export PYTHONPATH="$PWD/bindings/python''${PYTHONPATH:+:$PYTHONPATH}"
 
