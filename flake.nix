@@ -70,7 +70,7 @@
           doCheck    = true;
           checkPhase = ''
             runHook preCheck
-            LD_LIBRARY_PATH=_build:_build/_deps/secp256k1-build/src ./_build/wabisabi_test
+            LD_LIBRARY_PATH=_build ./_build/wabisabi_test
             runHook postCheck
           '';
 
@@ -297,8 +297,8 @@
             shellHook = ''
               export SECP256K1_SOURCE_DIR="${secp256k1-src}"
               export PYTHONPATH="$PWD/bindings/python''${PYTHONPATH:+:$PYTHONPATH}"
-              # libwabisabi.so links libsecp256k1.so dynamically; expose both build dirs.
-              export LD_LIBRARY_PATH="$PWD/c/build:$PWD/c/build/_deps/secp256k1-build/src''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              # secp256k1 is statically embedded in libwabisabi.so; only c/build is needed.
+              export LD_LIBRARY_PATH="$PWD/c/build''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
               echo ""
               echo "  WabiSabi Python dev shell"
@@ -344,7 +344,7 @@
             DOTNET_SYSTEM_GLOBALIZATION_INVARIANT = 1;
 
             shellHook = ''
-              export LD_LIBRARY_PATH="$PWD/c/build:$PWD/c/build/_deps/secp256k1-build/src:${pkgs.lib.makeLibraryPath dotnetLibs}"
+              export LD_LIBRARY_PATH="$PWD/c/build:${pkgs.lib.makeLibraryPath dotnetLibs}"
               export SECP256K1_SOURCE_DIR="${secp256k1-src}"
               export PYTHONPATH="$PWD/bindings/python''${PYTHONPATH:+:$PYTHONPATH}"
 
