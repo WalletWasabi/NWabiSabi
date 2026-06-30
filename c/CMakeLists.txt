@@ -24,10 +24,18 @@ set(SECP256K1_ENABLE_MODULE_RECOVERY OFF CACHE BOOL "" FORCE)
 # dynamically NEED libsecp256k1.so.2 and fail to load on consumers that don't
 # ship it. Override here and restore afterwards; our own `wabisabi` target is
 # declared SHARED explicitly, so it is unaffected.
+#
+# Building secp256k1 static turns PIC off by default for its objects, and
+# non-PIC objects cannot be linked into a shared library (ld: "relocation ...
+# can not be used when making a shared object; recompile with -fPIC"). Force
+# POSITION_INDEPENDENT_CODE ON so the static archive is still relocatable.
 set(_wabisabi_saved_build_shared "${BUILD_SHARED_LIBS}")
+set(_wabisabi_saved_pic "${CMAKE_POSITION_INDEPENDENT_CODE}")
 set(BUILD_SHARED_LIBS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 FetchContent_MakeAvailable(secp256k1)
 set(BUILD_SHARED_LIBS "${_wabisabi_saved_build_shared}")
+set(CMAKE_POSITION_INDEPENDENT_CODE "${_wabisabi_saved_pic}")
 
 # WabiSabi shared library (core protocol + serialization layer for P/Invoke)
 add_library(wabisabi SHARED
