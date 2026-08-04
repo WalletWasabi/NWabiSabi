@@ -17,6 +17,10 @@ set(SECP256K1_BUILD_EXHAUSTIVE_TESTS OFF CACHE BOOL "" FORCE)
 set(SECP256K1_BUILD_BENCHMARK OFF CACHE BOOL "" FORCE)
 set(SECP256K1_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SECP256K1_ENABLE_MODULE_RECOVERY OFF CACHE BOOL "" FORCE)
+# The ownership-proof module (SLIP-0019 / BIP-322) needs Schnorr signatures and
+# the extrakeys (x-only pubkey / keypair) API for Taproot key-path spends.
+set(SECP256K1_ENABLE_MODULE_EXTRAKEYS ON CACHE BOOL "" FORCE)
+set(SECP256K1_ENABLE_MODULE_SCHNORRSIG ON CACHE BOOL "" FORCE)
 # Force secp256k1 to build as a static archive so it is embedded directly into
 # libwabisabi (no runtime dependency on libsecp256k1.so.N). secp256k1's
 # add_library() follows BUILD_SHARED_LIBS, which some build environments
@@ -50,6 +54,8 @@ add_library(wabisabi SHARED
     src/credential.c
     src/issuer.c
     src/client.c
+    src/ownership_proof.c
+    src/ownership_ffi.c
     src/ffi.c
 )
 
@@ -60,6 +66,20 @@ target_include_directories(wabisabi
 )
 
 target_link_libraries(wabisabi PRIVATE secp256k1)
+
+# The ported ownership-proof module (ownership_proof.c) declares its whole
+# SLIP-0019/BIP-322 API with external linkage under generic, un-namespaced names
+# (varint_write, bytes_to_hex, proof_body_*, bip322_*, ...). Only the two
+# wabisabi_ownership_proof_* entry points in ownership_ffi.c are meant to be
+# exported; the rest would pollute libwabisabi's dynamic symbol table and can
+# collide (via ELF interposition) with the host. Compile the module with hidden
+# visibility so its symbols stay internal to the DSO — ownership_ffi.c still
+# links against them within libwabisabi. GCC/Clang only; MSVC doesn't export
+# without __declspec(dllexport), so it needs nothing here.
+if(NOT MSVC)
+    set_source_files_properties(src/ownership_proof.c
+        PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden")
+endif()
 
 # Keep symbols from the statically-linked secp256k1 archive out of libwabisabi's
 # dynamic symbol table. Otherwise the ~70 secp256k1_* symbols are re-exported

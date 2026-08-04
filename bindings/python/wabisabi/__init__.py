@@ -30,11 +30,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from enum import IntEnum
 
 from . import _native
 from ._native import WabiSabiError
 
-__all__ = ["Credential", "CredentialIssuer", "Client", "WabiSabiError"]
+__all__ = [
+    "Credential",
+    "CredentialIssuer",
+    "Client",
+    "OwnershipProof",
+    "OwnershipScriptPubKeyType",
+    "WabiSabiError",
+]
 
 __version__ = "0.1.0"
 
@@ -195,3 +203,106 @@ class Client:
         """Validate a response and return the issued credentials as a list."""
         packed = _native.client_handle_response(self._iparams, response_bytes, validation_state)
         return Credential.unpack(packed)
+
+
+# --------------------------------------------------------------------------
+# Ownership proofs (SLIP-0019 / BIP-322)
+# --------------------------------------------------------------------------
+
+class OwnershipScriptPubKeyType(IntEnum):
+    """The scriptPubKey type an ownership proof is generated for.
+
+    Kept independent of any Bitcoin library: a caller that has one maps its own
+    script-type onto these values. Mirrors the C ``wabisabi_spk_type_t`` and the
+    C# ``OwnershipScriptPubKeyType`` enums.
+    """
+
+    SEGWIT = _native.SPK_P2WPKH        #: Segwit v0 (P2WPKH).
+    TAPROOT_BIP86 = _native.SPK_P2TR   #: Taproot key-path, BIP-86 (P2TR).
+
+
+class OwnershipProof:
+    """SLIP-0019 / BIP-322 ownership proofs, byte-for-byte compatible with
+    WalletWasabi's managed ``OwnershipProof`` and the C# ``WabiSabi.Native``
+    facade.
+
+    Proving ownership of a coin means demonstrating control of the private key
+    that can spend its scriptPubKey. Generation derives the scriptPubKey
+    natively from the key and type; verification is done by a party that only
+    holds the coin's scriptPubKey (not the key). This class carries no state —
+    both methods are static.
+    """
+
+    #: Length in bytes of a single ownership identifier (HMAC-SHA256 output).
+    OWNERSHIP_ID_LENGTH = _native.OWNERSHIP_ID_SIZE
+
+    #: Required length in bytes of a private key.
+    PRIVKEY_LENGTH = _native.PRIVKEY_SIZE
+
+    @staticmethod
+    def generate(
+        key: bytes,
+        commitment_data: bytes = b"",
+        ownership_identifiers=(),
+        script_pubkey_type: OwnershipScriptPubKeyType = OwnershipScriptPubKeyType.SEGWIT,
+        user_confirmation: bool = True,
+    ) -> bytes:
+        """Generate a serialized ownership proof for the coin owned by ``key``.
+
+        ``key`` is the 32-byte private key; the scriptPubKey is derived natively
+        from it and ``script_pubkey_type``. ``commitment_data`` is bound into the
+        signature hash (e.g. the CoinJoin input commitment; may be empty).
+        ``ownership_identifiers`` is a sequence of 32-byte identifiers.
+        ``user_confirmation`` sets the UserConfirmation flag (true for CoinJoin
+        input proofs). Returns the serialized proof, identical to WalletWasabi's
+        ``OwnershipProof.ToBytes()``.
+        """
+        if len(key) != OwnershipProof.PRIVKEY_LENGTH:
+            raise ValueError(
+                f"key must be {OwnershipProof.PRIVKEY_LENGTH} bytes, got {len(key)}")
+
+        flat = OwnershipProof._flatten_identifiers(ownership_identifiers)
+        return _native.ownership_proof_generate(
+            key,
+            int(script_pubkey_type),
+            flat,
+            commitment_data or b"",
+            user_confirmation,
+        )
+
+    @staticmethod
+    def verify(
+        proof: bytes,
+        script_pubkey: bytes,
+        commitment_data: bytes = b"",
+        require_user_confirmation: bool = False,
+    ) -> bool:
+        """Verify a serialized ownership proof against a coin's scriptPubKey.
+
+        The verifier does not need the private key. ``commitment_data`` must
+        match what the proof was bound to. ``require_user_confirmation`` rejects
+        proofs lacking the UserConfirmation flag. Returns ``True`` if valid,
+        ``False`` if the signature or flags do not verify; raises
+        :class:`WabiSabiError` if the proof is malformed.
+        """
+        return _native.ownership_proof_verify(
+            proof, script_pubkey, commitment_data or b"", require_user_confirmation)
+
+    @staticmethod
+    def _flatten_identifiers(ownership_identifiers) -> bytes:
+        if isinstance(ownership_identifiers, (bytes, bytearray)):
+            data = bytes(ownership_identifiers)
+            if len(data) % OwnershipProof.OWNERSHIP_ID_LENGTH != 0:
+                raise ValueError(
+                    "packed identifiers length must be a multiple of "
+                    f"{OwnershipProof.OWNERSHIP_ID_LENGTH}")
+            return data
+
+        flat = bytearray()
+        for identifier in ownership_identifiers:
+            if len(identifier) != OwnershipProof.OWNERSHIP_ID_LENGTH:
+                raise ValueError(
+                    "each ownership identifier must be "
+                    f"{OwnershipProof.OWNERSHIP_ID_LENGTH} bytes, got {len(identifier)}")
+            flat += identifier
+        return bytes(flat)

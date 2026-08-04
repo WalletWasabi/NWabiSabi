@@ -66,13 +66,16 @@ def test_invalid_response_raises():
     sk = os.urandom(160)
     issuer = CredentialIssuer(sk, MAX_AMOUNT)
     client = Client(issuer.iparams, MAX_AMOUNT)
-    _, zero_val = client.create_zero_request()
+    zero_req, zero_val = client.create_zero_request()
+    # Tamper a real response so its proof no longer verifies.
+    resp = bytearray(issuer.handle_zero(zero_req))
+    resp[0] ^= 0xFF
     try:
-        client.handle_response(b"\x00" * 200, zero_val)
+        client.handle_response(bytes(resp), zero_val)
     except (WabiSabiError, ValueError):
         pass
     else:
-        raise AssertionError("expected an error for a garbage response")
+        raise AssertionError("expected an error for a tampered response")
 
 
 def _run_standalone():
