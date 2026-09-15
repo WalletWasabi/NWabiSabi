@@ -622,7 +622,8 @@ test_balance_proof(void) {
         wabisabi_scalar_t z = scalar_from_u32(cases[i].z);
         wabisabi_scalar_t rd = scalar_from_u32(cases[i].rd);
 
-        wabisabi_knowledge_t kn = wabisabi_balance_proof_knowledge(&z, &rd);
+        wabisabi_knowledge_t kn;
+        wabisabi_balance_proof_knowledge_into(&kn, &z, &rd);
         char lbl[64];
         snprintf(lbl, sizeof(lbl), "balance(z=%u,rd=%u)", cases[i].z, cases[i].rd);
         CHECK(lbl, prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
@@ -632,7 +633,8 @@ test_balance_proof(void) {
     {
         wabisabi_scalar_t z = scalar_from_u32(5);
         wabisabi_scalar_t rd = scalar_from_u32(3);
-        wabisabi_knowledge_t kn = wabisabi_balance_proof_knowledge(&z, &rd);
+        wabisabi_knowledge_t kn;
+        wabisabi_balance_proof_knowledge_into(&kn, &z, &rd);
         kn.witness[0] = scalar_from_u32(6);
         CHECK("balance wrong z fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
     }
@@ -641,7 +643,8 @@ test_balance_proof(void) {
     {
         wabisabi_scalar_t z = scalar_from_u32(5);
         wabisabi_scalar_t rd = scalar_from_u32(3);
-        wabisabi_knowledge_t kn = wabisabi_balance_proof_knowledge(&z, &rd);
+        wabisabi_knowledge_t kn;
+        wabisabi_balance_proof_knowledge_into(&kn, &z, &rd);
         kn.witness[1] = scalar_from_u32(4);
         CHECK("balance wrong r_delta fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
     }
@@ -678,9 +681,11 @@ test_range_proof(void) {
         wabisabi_ge_t ma;
         wabisabi_pedersen_commit(&ma, &a, &randomness);
 
-        wabisabi_range_proof_t rp = wabisabi_range_proof_knowledge(&a, &randomness, width, rnd, 32);
+        wabisabi_range_proof_t rp;
+        wabisabi_range_proof_knowledge_into(&rp, &a, &randomness, width, rnd, 32);
 
-        wabisabi_statement_t stmt = wabisabi_range_proof_statement(&ma, rp.bit_commitments, width);
+        wabisabi_statement_t stmt;
+        wabisabi_range_proof_statement_into(&stmt, &ma, rp.bit_commitments, width);
 
         wabisabi_transcript_t t1, t2;
         wabisabi_transcript_init(&t1, LABEL, sizeof(LABEL) - 1);
@@ -715,12 +720,12 @@ test_zero_proofs(void) {
     wabisabi_ge_mul(&ma1, &r1, &WABISABI_Gh);
 
     wabisabi_knowledge_t kn[2];
-    kn[0] = wabisabi_zero_proof_knowledge(&ma0, &r0);
-    kn[1] = wabisabi_zero_proof_knowledge(&ma1, &r1);
+    wabisabi_zero_proof_knowledge_into(&kn[0], &ma0, &r0);
+    wabisabi_zero_proof_knowledge_into(&kn[1], &ma1, &r1);
 
     wabisabi_statement_t stmts[2];
-    stmts[0] = wabisabi_zero_proof_statement(&ma0);
-    stmts[1] = wabisabi_zero_proof_statement(&ma1);
+    wabisabi_zero_proof_statement_into(&stmts[0], &ma0);
+    wabisabi_zero_proof_statement_into(&stmts[1], &ma1);
 
     wabisabi_transcript_t t1, t2;
     wabisabi_transcript_init(&t1, LABEL, sizeof(LABEL) - 1);
@@ -735,8 +740,10 @@ test_zero_proofs(void) {
     wabisabi_ge_t ma_nonzero;
     wabisabi_pedersen_commit(&ma_nonzero, &one_amount, &r0);
 
-    wabisabi_knowledge_t kn_bad = wabisabi_zero_proof_knowledge(&ma_nonzero, &r0);
-    wabisabi_statement_t stmt_bad = wabisabi_zero_proof_statement(&ma_nonzero);
+    wabisabi_knowledge_t kn_bad;
+    wabisabi_zero_proof_knowledge_into(&kn_bad, &ma_nonzero, &r0);
+    wabisabi_statement_t stmt_bad;
+    wabisabi_zero_proof_statement_into(&stmt_bad, &ma_nonzero);
 
     wabisabi_transcript_init(&t1, LABEL, sizeof(LABEL) - 1);
     wabisabi_transcript_clone(&t2, &t1);
@@ -751,8 +758,10 @@ test_zero_proofs(void) {
         wabisabi_ge_t ma2;
         wabisabi_ge_mul(&ma2, &r2, &WABISABI_Gh);
 
-        wabisabi_knowledge_t kn2 = wabisabi_zero_proof_knowledge(&ma0, &r0);
-        wabisabi_statement_t stmt2 = wabisabi_zero_proof_statement(&ma2); /* different ma */
+        wabisabi_knowledge_t kn2;
+        wabisabi_zero_proof_knowledge_into(&kn2, &ma0, &r0);
+        wabisabi_statement_t stmt2;
+        wabisabi_zero_proof_statement_into(&stmt2, &ma2); /* different ma */
 
         wabisabi_transcript_init(&t1, LABEL, sizeof(LABEL) - 1);
         wabisabi_transcript_clone(&t2, &t1);

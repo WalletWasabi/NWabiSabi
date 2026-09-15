@@ -107,3 +107,13 @@ target_include_directories(wabisabi_test PRIVATE include src
 # are always available).
 find_package(Threads REQUIRED)
 target_link_libraries(wabisabi_test PRIVATE wabisabi secp256k1 Threads::Threads)
+
+# The unit tests deliberately build the large proof fixtures (statements /
+# knowledge, ~0.6 MB each; some tests hold several at once) directly on the main
+# thread. Linux and macOS default to an 8 MB main-thread stack, but the mingw
+# default image stack (~2 MB) is too small, so give the *test binary* a 16 MB
+# stack on Windows. This concerns the test fixtures only — the library itself
+# stays stack-frugal, which tests/test_stack.c enforces on a capped thread.
+if(WIN32)
+    target_link_options(wabisabi_test PRIVATE -Wl,--stack,16777216)
+endif()

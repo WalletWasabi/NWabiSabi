@@ -262,14 +262,6 @@ wabisabi_issuer_params_statement_into(wabisabi_statement_t* stmt, const wabisabi
     equation_add_entry(&stmt->equations[2], 1, &WABISABI_Gwp);
 }
 
-wabisabi_statement_t
-wabisabi_issuer_params_statement(const wabisabi_iparams_t* iparams, const wabisabi_mac_t* mac,
-                                  const wabisabi_ge_t* ma) {
-    wabisabi_statement_t stmt;
-    wabisabi_issuer_params_statement_into(&stmt, iparams, mac, ma);
-    return stmt;
-}
-
 void
 wabisabi_issuer_params_knowledge(wabisabi_knowledge_t* out, const wabisabi_mac_t* mac, const wabisabi_ge_t* ma,
                                   const wabisabi_sk_t* sk) {
@@ -371,14 +363,6 @@ wabisabi_show_credential_statement_into(wabisabi_statement_t* stmt, const wabisa
     equation_add_entry(&stmt->equations[3], 4, &WABISABI_Gs);  /* r */
 }
 
-wabisabi_statement_t
-wabisabi_show_credential_statement(const wabisabi_presentation_t* p, const wabisabi_ge_t* z_point,
-                                   const wabisabi_iparams_t* iparams) {
-    wabisabi_statement_t stmt;
-    wabisabi_show_credential_statement_into(&stmt, p, z_point, iparams);
-    return stmt;
-}
-
 void
 wabisabi_show_credential_knowledge_into(wabisabi_knowledge_t* kn, const wabisabi_presentation_t* p,
                                         const wabisabi_scalar_t* z, const wabisabi_mac_t* mac, int64_t value,
@@ -410,15 +394,6 @@ wabisabi_show_credential_knowledge_into(wabisabi_knowledge_t* kn, const wabisabi
     kn->witness[4] = *randomness;
 }
 
-wabisabi_knowledge_t
-wabisabi_show_credential_knowledge(const wabisabi_presentation_t* p, const wabisabi_scalar_t* z,
-                                   const wabisabi_mac_t* mac, int64_t value, const wabisabi_scalar_t* randomness,
-                                   const wabisabi_iparams_t* iparams) {
-    wabisabi_knowledge_t kn;
-    wabisabi_show_credential_knowledge_into(&kn, p, z, mac, value, randomness, iparams);
-    return kn;
-}
-
 /* ---- Balance proof ---- */
 
 void
@@ -431,13 +406,6 @@ wabisabi_balance_proof_statement_into(wabisabi_statement_t* stmt, const wabisabi
     stmt->equations[0].n_entries = 0;
     equation_add_entry(&stmt->equations[0], 0, &WABISABI_Ga);
     equation_add_entry(&stmt->equations[0], 1, &WABISABI_Gh);
-}
-
-wabisabi_statement_t
-wabisabi_balance_proof_statement(const wabisabi_ge_t* balance_commitment) {
-    wabisabi_statement_t stmt;
-    wabisabi_balance_proof_statement_into(&stmt, balance_commitment);
-    return stmt;
 }
 
 void
@@ -455,13 +423,6 @@ wabisabi_balance_proof_knowledge_into(wabisabi_knowledge_t* kn, const wabisabi_s
     kn->witness[1] = *r_delta_sum;
 }
 
-wabisabi_knowledge_t
-wabisabi_balance_proof_knowledge(const wabisabi_scalar_t* z_sum, const wabisabi_scalar_t* r_delta_sum) {
-    wabisabi_knowledge_t kn;
-    wabisabi_balance_proof_knowledge_into(&kn, z_sum, r_delta_sum);
-    return kn;
-}
-
 /* ---- Zero proof (bootstrap) ---- */
 
 void
@@ -469,24 +430,10 @@ wabisabi_zero_proof_statement_into(wabisabi_statement_t* out, const wabisabi_ge_
     wabisabi_range_proof_statement_into(out, ma, NULL, 0);
 }
 
-wabisabi_statement_t
-wabisabi_zero_proof_statement(const wabisabi_ge_t* ma) {
-    wabisabi_statement_t stmt;
-    wabisabi_zero_proof_statement_into(&stmt, ma);
-    return stmt;
-}
-
 void
 wabisabi_zero_proof_knowledge_into(wabisabi_knowledge_t* kn, const wabisabi_ge_t* ma, const wabisabi_scalar_t* r) {
     wabisabi_zero_proof_statement_into(&kn->statement, ma);
     kn->witness[0] = *r;
-}
-
-wabisabi_knowledge_t
-wabisabi_zero_proof_knowledge(const wabisabi_ge_t* ma, const wabisabi_scalar_t* r) {
-    wabisabi_knowledge_t kn;
-    wabisabi_zero_proof_knowledge_into(&kn, ma, r);
-    return kn;
 }
 
 /* ---- Range proof ---- */
@@ -558,13 +505,6 @@ wabisabi_range_proof_statement_into(wabisabi_statement_t* stmt, const wabisabi_g
 #undef BITS_ROW
 }
 
-wabisabi_statement_t
-wabisabi_range_proof_statement(const wabisabi_ge_t* ma, const wabisabi_ge_t* bit_commitments, int width) {
-    wabisabi_statement_t stmt;
-    wabisabi_range_proof_statement_into(&stmt, ma, bit_commitments, width);
-    return stmt;
-}
-
 void
 wabisabi_range_proof_knowledge_into(wabisabi_range_proof_t* rp, const wabisabi_scalar_t* amount,
                                     const wabisabi_scalar_t* randomness, int width, const uint8_t* random_bytes,
@@ -622,12 +562,4 @@ wabisabi_range_proof_knowledge_into(wabisabi_range_proof_t* rp, const wabisabi_s
 #undef BIT_COL
 #undef RND_COL
 #undef PROD_COL
-}
-
-wabisabi_range_proof_t
-wabisabi_range_proof_knowledge(const wabisabi_scalar_t* amount, const wabisabi_scalar_t* randomness, int width,
-                               const uint8_t* random_bytes, size_t rnd_len) {
-    wabisabi_range_proof_t rp;
-    wabisabi_range_proof_knowledge_into(&rp, amount, randomness, width, random_bytes, rnd_len);
-    return rp;
 }

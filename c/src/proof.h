@@ -85,17 +85,15 @@ void wabisabi_prove(wabisabi_proof_t* out, wabisabi_transcript_t* transcript, co
 int wabisabi_verify(wabisabi_transcript_t* transcript, const wabisabi_statement_t* statements, int n_stmt,
                     const wabisabi_proof_t* proofs, int n_proof);
 
-/* ---- High-level statement constructors ---- */
+/* ---- High-level statement / knowledge constructors -------------------------
+ * wabisabi_statement_t (~585 KB) and wabisabi_knowledge_t (~590 KB) are far too
+ * large to live on the stack or to be returned by value: a single by-value
+ * return copy overflows the ~1 MB thread-pool stack on Windows/macOS (Linux's
+ * 8 MB stack merely hides it). Every constructor therefore builds directly into
+ * a caller-provided destination, which callers must heap-allocate. */
 
-/* IssuerParametersKnowledge: prove MAC was computed with correct key */
-void wabisabi_issuer_params_knowledge(wabisabi_knowledge_t* out, const wabisabi_mac_t* mac, const wabisabi_ge_t* ma,
-                                      const wabisabi_sk_t* sk);
-
-wabisabi_statement_t wabisabi_issuer_params_statement(const wabisabi_iparams_t* iparams, const wabisabi_mac_t* mac,
-                                                      const wabisabi_ge_t* ma);
-
-/* ShowCredentialKnowledge: prove knowledge of a valid credential */
-/* Returns the presentation (Ca, Cx0, Cx1, CV, S) via separate fields */
+/* Returns the presentation (Ca, Cx0, Cx1, CV, S) via separate fields. Small
+ * enough (5 group elements) to return by value. */
 typedef struct {
     wabisabi_ge_t ca, cx0, cx1, cv, s;
 } wabisabi_presentation_t;
@@ -103,49 +101,17 @@ typedef struct {
 wabisabi_presentation_t wabisabi_credential_present(const wabisabi_mac_t* mac, int64_t value,
                                                     const wabisabi_scalar_t* randomness, const wabisabi_scalar_t* z);
 
-wabisabi_knowledge_t wabisabi_show_credential_knowledge(const wabisabi_presentation_t* p, const wabisabi_scalar_t* z,
-                                                        const wabisabi_mac_t* mac, int64_t value,
-                                                        const wabisabi_scalar_t* randomness,
-                                                        const wabisabi_iparams_t* iparams);
-
-wabisabi_statement_t wabisabi_show_credential_statement(const wabisabi_presentation_t* p,
-                                                        const wabisabi_ge_t* z_point, /* z * iparams.I */
-                                                        const wabisabi_iparams_t* iparams);
-
-/* BalanceProofKnowledge */
-wabisabi_knowledge_t wabisabi_balance_proof_knowledge(const wabisabi_scalar_t* z_sum,
-                                                      const wabisabi_scalar_t* r_delta_sum);
-
-wabisabi_statement_t wabisabi_balance_proof_statement(const wabisabi_ge_t* balance_commitment);
-
-/* ZeroProofKnowledge (bootstrap — proof that Ma = 0*Gg + r*Gh) */
-wabisabi_knowledge_t wabisabi_zero_proof_knowledge(const wabisabi_ge_t* ma, const wabisabi_scalar_t* r);
-
-wabisabi_statement_t wabisabi_zero_proof_statement(const wabisabi_ge_t* ma);
-
-/* RangeProofKnowledge: prove amount is in range [0, 2^width) */
+/* RangeProofKnowledge bundle: prove amount is in range [0, 2^width). */
 typedef struct {
     wabisabi_knowledge_t knowledge;
     wabisabi_ge_t bit_commitments[WABISABI_MAX_RANGE_WIDTH];
     int width;
 } wabisabi_range_proof_t;
 
-wabisabi_range_proof_t wabisabi_range_proof_knowledge(const wabisabi_scalar_t* amount,
-                                                      const wabisabi_scalar_t* randomness, int width,
-                                                      const uint8_t* random_bytes,
-                                                      size_t rnd_len); /* for bit randomness */
+/* IssuerParametersKnowledge: prove MAC was computed with correct key. */
+void wabisabi_issuer_params_knowledge(wabisabi_knowledge_t* out, const wabisabi_mac_t* mac, const wabisabi_ge_t* ma,
+                                      const wabisabi_sk_t* sk);
 
-wabisabi_statement_t wabisabi_range_proof_statement(const wabisabi_ge_t* ma, const wabisabi_ge_t* bit_commitments,
-                                                    int width);
-
-/* ---- Out-pointer builders --------------------------------------------------
- * wabisabi_statement_t (~585 KB) and wabisabi_knowledge_t (~590 KB) are far too
- * large to live on the stack or to return by value: a single by-value return
- * copy overflows the ~1 MB thread-pool stack on Windows/macOS (Linux's 8 MB
- * stack merely hides it). The by-value constructors above are kept only as
- * convenience wrappers for the unit tests, which run on the main thread. All
- * production / FFI code must use these *_into variants, which build directly
- * into a caller-provided (heap-allocated) destination. */
 void wabisabi_issuer_params_statement_into(wabisabi_statement_t* out, const wabisabi_iparams_t* iparams,
                                            const wabisabi_mac_t* mac, const wabisabi_ge_t* ma);
 

@@ -215,7 +215,8 @@ test_zero_proof(void) {
     wabisabi_ge_t ma;
     wabisabi_ge_mul(&ma, &r, &WABISABI_Gh);
 
-    wabisabi_knowledge_t kn = wabisabi_zero_proof_knowledge(&ma, &r);
+    wabisabi_knowledge_t kn;
+    wabisabi_zero_proof_knowledge_into(&kn, &ma, &r);
 
     uint8_t rnd[32];
     next_random(rnd);
@@ -227,7 +228,8 @@ test_zero_proof(void) {
     wabisabi_proof_t proof;
     wabisabi_prove(&proof, &t1, &kn, 1, rnd, 32);
 
-    wabisabi_statement_t stmt = wabisabi_zero_proof_statement(&ma);
+    wabisabi_statement_t stmt;
+    wabisabi_zero_proof_statement_into(&stmt, &ma);
     int ok = wabisabi_verify(&t2, &stmt, 1, &proof, 1);
     assert(ok);
 
