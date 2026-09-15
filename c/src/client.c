@@ -55,7 +55,7 @@ wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, const uint
         wabisabi_ge_t ma;
         wabisabi_ge_mul(&ma, &randomness, &WABISABI_Gh);
 
-        knowledge[i] = wabisabi_zero_proof_knowledge(&ma, &randomness);
+        wabisabi_zero_proof_knowledge_into(&knowledge[i], &ma, &randomness);
 
         out_req->requested[i].ma = ma;
         out_req->requested[i].n_bit_commitments = 0;
@@ -123,15 +123,18 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
             wabisabi_credential_present(&credentials_to_present[i].mac, credentials_to_present[i].value,
                                         &credentials_to_present[i].randomness, &z_scalars[i]);
 
-        all_knowledge[n_knowledge++] = wabisabi_show_credential_knowledge(
-            &out_req->presented[i], &z_scalars[i], &credentials_to_present[i].mac, credentials_to_present[i].value,
-            &credentials_to_present[i].randomness, &c->iparams);
+        wabisabi_show_credential_knowledge_into(
+            &all_knowledge[n_knowledge++], &out_req->presented[i], &z_scalars[i], &credentials_to_present[i].mac,
+            credentials_to_present[i].value, &credentials_to_present[i].randomness, &c->iparams);
 
         total_presented += credentials_to_present[i].value;
     }
 
-    /* Generate range proofs for requested credentials */
+    /* Generate range proofs for requested credentials. wabisabi_range_proof_t is
+     * ~590 KB, so it must not live on the stack (it would overflow the ~1 MB
+     * thread-pool stack on Windows/macOS); build it into a heap scratch buffer. */
     int64_t total_requested = 0;
+    wabisabi_range_proof_t* rp = malloc(sizeof(*rp));
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         int64_t val = amounts[i];
         total_requested += val;
@@ -166,20 +169,21 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
         uint8_t bit_rand[WABISABI_SCALAR_SIZE];
         sha256(bit_seed, WABISABI_SCALAR_SIZE + 1, bit_rand);
 
-        wabisabi_range_proof_t rp = wabisabi_range_proof_knowledge(&val_scalar, &randomness, c->range_proof_width,
-                                                                   bit_rand, WABISABI_SCALAR_SIZE);
+        wabisabi_range_proof_knowledge_into(rp, &val_scalar, &randomness, c->range_proof_width, bit_rand,
+                                            WABISABI_SCALAR_SIZE);
 
         /* Fill issuance request */
         out_req->requested[i].ma = ma;
-        out_req->requested[i].n_bit_commitments = rp.width;
-        memcpy(out_req->requested[i].bit_commitments, rp.bit_commitments, rp.width * sizeof(wabisabi_ge_t));
+        out_req->requested[i].n_bit_commitments = rp->width;
+        memcpy(out_req->requested[i].bit_commitments, rp->bit_commitments, rp->width * sizeof(wabisabi_ge_t));
 
-        all_knowledge[n_knowledge++] = rp.knowledge;
+        all_knowledge[n_knowledge++] = rp->knowledge;
 
         out_val->requested[i].value = val;
         out_val->requested[i].randomness = randomness;
         out_val->requested[i].ma = ma;
     }
+    free(rp);
 
     /* Balance proof */
     {
@@ -207,7 +211,7 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
         wabisabi_scalar_t delta_r;
         wabisabi_scalar_add(&delta_r, &cr, &neg_r_new);
 
-        all_knowledge[n_knowledge++] = wabisabi_balance_proof_knowledge(&sum_z, &delta_r);
+        wabisabi_balance_proof_knowledge_into(&all_knowledge[n_knowledge++], &sum_z, &delta_r);
     }
 
     out_req->delta = total_requested - total_presented;
@@ -263,7 +267,8 @@ wabisabi_client_state_handle_response(wabisabi_client_state_t* c, const wabisabi
     /* Verify issuer parameter proofs */
     wabisabi_statement_t* statements = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_statement_t));
     for (int i = 0; i < n; i++) {
-        statements[i] = wabisabi_issuer_params_statement(&c->iparams, &response->issued[i], &val->requested[i].ma);
+        wabisabi_issuer_params_statement_into(&statements[i], &c->iparams, &response->issued[i],
+                                              &val->requested[i].ma);
     }
 
     /* Advance our copy of the transcript (same state as during proving) */

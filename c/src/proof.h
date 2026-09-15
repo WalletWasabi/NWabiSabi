@@ -138,6 +138,40 @@ wabisabi_range_proof_t wabisabi_range_proof_knowledge(const wabisabi_scalar_t* a
 wabisabi_statement_t wabisabi_range_proof_statement(const wabisabi_ge_t* ma, const wabisabi_ge_t* bit_commitments,
                                                     int width);
 
+/* ---- Out-pointer builders --------------------------------------------------
+ * wabisabi_statement_t (~585 KB) and wabisabi_knowledge_t (~590 KB) are far too
+ * large to live on the stack or to return by value: a single by-value return
+ * copy overflows the ~1 MB thread-pool stack on Windows/macOS (Linux's 8 MB
+ * stack merely hides it). The by-value constructors above are kept only as
+ * convenience wrappers for the unit tests, which run on the main thread. All
+ * production / FFI code must use these *_into variants, which build directly
+ * into a caller-provided (heap-allocated) destination. */
+void wabisabi_issuer_params_statement_into(wabisabi_statement_t* out, const wabisabi_iparams_t* iparams,
+                                           const wabisabi_mac_t* mac, const wabisabi_ge_t* ma);
+
+void wabisabi_show_credential_statement_into(wabisabi_statement_t* out, const wabisabi_presentation_t* p,
+                                             const wabisabi_ge_t* z_point, const wabisabi_iparams_t* iparams);
+
+void wabisabi_show_credential_knowledge_into(wabisabi_knowledge_t* out, const wabisabi_presentation_t* p,
+                                             const wabisabi_scalar_t* z, const wabisabi_mac_t* mac, int64_t value,
+                                             const wabisabi_scalar_t* randomness, const wabisabi_iparams_t* iparams);
+
+void wabisabi_balance_proof_statement_into(wabisabi_statement_t* out, const wabisabi_ge_t* balance_commitment);
+
+void wabisabi_balance_proof_knowledge_into(wabisabi_knowledge_t* out, const wabisabi_scalar_t* z_sum,
+                                           const wabisabi_scalar_t* r_delta_sum);
+
+void wabisabi_zero_proof_statement_into(wabisabi_statement_t* out, const wabisabi_ge_t* ma);
+
+void wabisabi_zero_proof_knowledge_into(wabisabi_knowledge_t* out, const wabisabi_ge_t* ma, const wabisabi_scalar_t* r);
+
+void wabisabi_range_proof_statement_into(wabisabi_statement_t* out, const wabisabi_ge_t* ma,
+                                         const wabisabi_ge_t* bit_commitments, int width);
+
+void wabisabi_range_proof_knowledge_into(wabisabi_range_proof_t* out, const wabisabi_scalar_t* amount,
+                                         const wabisabi_scalar_t* randomness, int width, const uint8_t* random_bytes,
+                                         size_t rnd_len);
+
 /* Pedersen commitment: ma = amount*Gg + randomness*Gh */
 void wabisabi_pedersen_commit(wabisabi_ge_t* out, const wabisabi_scalar_t* amount, const wabisabi_scalar_t* randomness);
 
