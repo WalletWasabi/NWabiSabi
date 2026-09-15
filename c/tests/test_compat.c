@@ -92,40 +92,41 @@ scalar_from_u32(uint32_t v) {
     return s;
 }
 
+/* wabisabi_knowledge_t is ~600 KB (worst-case-sized sparse matrix), far too
+ * large for the stack even for these tiny statements — the test helpers build
+ * into a caller-provided (heap) destination, mirroring the library's *_into
+ * convention. */
+
 /* P = secret * generator (1 equation, 1 witness) */
-static wabisabi_knowledge_t
-make_dlog_knowledge(const wabisabi_scalar_t* secret, const wabisabi_ge_t* gen) {
-    wabisabi_knowledge_t kn;
-    memset(&kn.statement, 0, sizeof(kn.statement));
-    kn.statement.n_equations = 1;
-    kn.statement.n_witnesses = 1;
-    wabisabi_ge_mul(&kn.statement.equations[0].public_point, secret, gen);
-    kn.statement.equations[0].n_entries = 0;
-    equation_add_entry(&kn.statement.equations[0], 0, gen);
-    kn.witness[0] = *secret;
-    return kn;
+static void
+make_dlog_knowledge(wabisabi_knowledge_t* kn, const wabisabi_scalar_t* secret, const wabisabi_ge_t* gen) {
+    memset(&kn->statement, 0, sizeof(kn->statement));
+    kn->statement.n_equations = 1;
+    kn->statement.n_witnesses = 1;
+    wabisabi_ge_mul(&kn->statement.equations[0].public_point, secret, gen);
+    kn->statement.equations[0].n_entries = 0;
+    equation_add_entry(&kn->statement.equations[0], 0, gen);
+    kn->witness[0] = *secret;
 }
 
 /* P = s1*g1 + s2*g2 (1 equation, 2 witnesses) */
-static wabisabi_knowledge_t
-make_rep_knowledge(const wabisabi_scalar_t* s1, const wabisabi_scalar_t* s2, const wabisabi_ge_t* g1,
-                   const wabisabi_ge_t* g2) {
-    wabisabi_knowledge_t kn;
-    memset(&kn.statement, 0, sizeof(kn.statement));
-    kn.statement.n_equations = 1;
-    kn.statement.n_witnesses = 2;
+static void
+make_rep_knowledge(wabisabi_knowledge_t* kn, const wabisabi_scalar_t* s1, const wabisabi_scalar_t* s2,
+                   const wabisabi_ge_t* g1, const wabisabi_ge_t* g2) {
+    memset(&kn->statement, 0, sizeof(kn->statement));
+    kn->statement.n_equations = 1;
+    kn->statement.n_witnesses = 2;
 
     wabisabi_ge_t t1, t2;
     wabisabi_ge_mul(&t1, s1, g1);
     wabisabi_ge_mul(&t2, s2, g2);
-    wabisabi_ge_add(&kn.statement.equations[0].public_point, &t1, &t2);
-    kn.statement.equations[0].n_entries = 0;
-    equation_add_entry(&kn.statement.equations[0], 0, g1);
-    equation_add_entry(&kn.statement.equations[0], 1, g2);
+    wabisabi_ge_add(&kn->statement.equations[0].public_point, &t1, &t2);
+    kn->statement.equations[0].n_entries = 0;
+    equation_add_entry(&kn->statement.equations[0], 0, g1);
+    equation_add_entry(&kn->statement.equations[0], 1, g2);
 
-    kn.witness[0] = *s1;
-    kn.witness[1] = *s2;
-    return kn;
+    kn->witness[0] = *s1;
+    kn->witness[1] = *s2;
 }
 
 /* Run prove + verify under a fresh transcript pair. Returns 1 if valid. */
@@ -455,21 +456,25 @@ test_proof_issuer_params(void) {
     wabisabi_mac_t mac;
     wabisabi_mac_compute(&mac, &sk, &ma, &t);
 
-    wabisabi_knowledge_t kn;
-    wabisabi_issuer_params_knowledge(&kn, &mac, &ma, &sk);
+    wabisabi_knowledge_t* kn = malloc(sizeof(*kn));
+    wabisabi_knowledge_t* kn_bad = malloc(sizeof(*kn_bad));
+    wabisabi_issuer_params_knowledge(kn, &mac, &ma, &sk);
 
-    CHECK("issuer params proof verifies", prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+    CHECK("issuer params proof verifies", prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
 
     /* Corrupt the public point in equation 0 — must fail */
-    wabisabi_knowledge_t kn_bad = kn;
-    wabisabi_ge_add(&kn_bad.statement.equations[0].public_point, &kn_bad.statement.equations[0].public_point,
+    *kn_bad = *kn;
+    wabisabi_ge_add(&kn_bad->statement.equations[0].public_point, &kn_bad->statement.equations[0].public_point,
                     &WABISABI_G); /* shift by G */
-    CHECK("corrupted public point fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn_bad, 1, ZERO_RND, 32));
+    CHECK("corrupted public point fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, kn_bad, 1, ZERO_RND, 32));
 
     /* Wrong witness fails */
-    wabisabi_knowledge_t kn_w = kn;
-    kn_w.witness[0] = scalar_from_u32(999);
-    CHECK("wrong witness fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn_w, 1, ZERO_RND, 32));
+    *kn_bad = *kn;
+    kn_bad->witness[0] = scalar_from_u32(999);
+    CHECK("wrong witness fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, kn_bad, 1, ZERO_RND, 32));
+
+    free(kn);
+    free(kn_bad);
 }
 
 /* ================================================================== */
@@ -483,33 +488,37 @@ test_knowledge_of_dlog(void) {
     /* Seeds from C# [InlineData(1, 3, 5, 7, short.MaxValue, int.MaxValue, uint.MaxValue)] */
     static const uint32_t seeds[] = {1, 3, 5, 7, 32767, 2147483647U, 4294967295U};
 
+    wabisabi_knowledge_t* kn = malloc(sizeof(*kn));
+    wabisabi_knowledge_t* kn2 = malloc(sizeof(*kn2));
+    wabisabi_statement_t* stmt = malloc(sizeof(*stmt));
+
     for (size_t i = 0; i < sizeof(seeds) / sizeof(seeds[0]); i++) {
         wabisabi_scalar_t s = scalar_from_u32(seeds[i]);
 
         /* Dlog with secp256k1 base point G */
-        wabisabi_knowledge_t kn = make_dlog_knowledge(&s, &WABISABI_G);
+        make_dlog_knowledge(kn, &s, &WABISABI_G);
         char lbl[48];
         snprintf(lbl, sizeof(lbl), "dlog(G) seed=%u", seeds[i]);
-        CHECK(lbl, prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+        CHECK(lbl, prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
 
         /* Also with generator Ga (like C# tests with 4*G as custom generator) */
-        wabisabi_knowledge_t kn2 = make_dlog_knowledge(&s, &WABISABI_Ga);
+        make_dlog_knowledge(kn2, &s, &WABISABI_Ga);
         snprintf(lbl, sizeof(lbl), "dlog(Ga) seed=%u", seeds[i]);
-        CHECK(lbl, prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn2, 1, ZERO_RND, 32));
+        CHECK(lbl, prove_and_verify(LABEL, sizeof(LABEL) - 1, kn2, 1, ZERO_RND, 32));
     }
 
     /* Wrong witness must not verify */
     {
         wabisabi_scalar_t s = scalar_from_u32(7);
-        wabisabi_knowledge_t kn = make_dlog_knowledge(&s, &WABISABI_G);
-        kn.witness[0] = scalar_from_u32(8); /* tamper */
-        CHECK("dlog wrong witness fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+        make_dlog_knowledge(kn, &s, &WABISABI_G);
+        kn->witness[0] = scalar_from_u32(8); /* tamper */
+        CHECK("dlog wrong witness fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
     }
 
     /* Proof is transcript-bound: different label → different challenge */
     {
         wabisabi_scalar_t s = scalar_from_u32(5);
-        wabisabi_knowledge_t kn = make_dlog_knowledge(&s, &WABISABI_G);
+        make_dlog_knowledge(kn, &s, &WABISABI_G);
 
         /* prove under "LabelA", verify under "LabelB" */
         const uint8_t la[] = "LabelA", lb[] = "LabelB";
@@ -518,10 +527,14 @@ test_knowledge_of_dlog(void) {
         wabisabi_transcript_init(&t2, lb, sizeof(lb) - 1);
 
         wabisabi_proof_t proof;
-        wabisabi_statement_t stmt = kn.statement;
-        wabisabi_prove(&proof, &t1, &kn, 1, ZERO_RND, 32);
-        CHECK("cross-label proof fails", !wabisabi_verify(&t2, &stmt, 1, &proof, 1));
+        *stmt = kn->statement;
+        wabisabi_prove(&proof, &t1, kn, 1, ZERO_RND, 32);
+        CHECK("cross-label proof fails", !wabisabi_verify(&t2, stmt, 1, &proof, 1));
     }
+
+    free(kn);
+    free(kn2);
+    free(stmt);
 }
 
 /* ================================================================== */
@@ -544,53 +557,56 @@ test_knowledge_of_rep(void) {
                  {2147483647U, 4294967295U},
                  {4294967295U, 4294967295U}};
 
+    wabisabi_knowledge_t* kn = malloc(sizeof(*kn));
+
     for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); i++) {
         wabisabi_scalar_t s1 = scalar_from_u32(pairs[i].a);
         wabisabi_scalar_t s2 = scalar_from_u32(pairs[i].b);
-        wabisabi_knowledge_t kn = make_rep_knowledge(&s1, &s2, &WABISABI_G, &WABISABI_Ga);
+        make_rep_knowledge(kn, &s1, &s2, &WABISABI_G, &WABISABI_Ga);
 
         char lbl[64];
         snprintf(lbl, sizeof(lbl), "rep(%u,%u)", pairs[i].a, pairs[i].b);
-        CHECK(lbl, prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+        CHECK(lbl, prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
     }
 
     /* Wrong s1 must not verify */
     {
         wabisabi_scalar_t s1 = scalar_from_u32(3), s2 = scalar_from_u32(5);
-        wabisabi_knowledge_t kn = make_rep_knowledge(&s1, &s2, &WABISABI_G, &WABISABI_Ga);
-        kn.witness[0] = scalar_from_u32(4); /* tamper */
-        CHECK("rep wrong s1 fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+        make_rep_knowledge(kn, &s1, &s2, &WABISABI_G, &WABISABI_Ga);
+        kn->witness[0] = scalar_from_u32(4); /* tamper */
+        CHECK("rep wrong s1 fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
     }
 
     /* Wrong s2 must not verify */
     {
         wabisabi_scalar_t s1 = scalar_from_u32(3), s2 = scalar_from_u32(5);
-        wabisabi_knowledge_t kn = make_rep_knowledge(&s1, &s2, &WABISABI_G, &WABISABI_Ga);
-        kn.witness[1] = scalar_from_u32(6); /* tamper */
-        CHECK("rep wrong s2 fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+        make_rep_knowledge(kn, &s1, &s2, &WABISABI_G, &WABISABI_Ga);
+        kn->witness[1] = scalar_from_u32(6); /* tamper */
+        CHECK("rep wrong s2 fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
     }
 
     /* Chaum-Pedersen: same secret for two generators (x*G, x*Ga) — 2 equations, 1 witness */
     {
         wabisabi_scalar_t x = scalar_from_u32(42);
-        wabisabi_knowledge_t kn;
-        memset(&kn.statement, 0, sizeof(kn.statement));
-        kn.statement.n_equations = 2;
-        kn.statement.n_witnesses = 1;
+        memset(&kn->statement, 0, sizeof(kn->statement));
+        kn->statement.n_equations = 2;
+        kn->statement.n_witnesses = 1;
 
         /* eq0: x*G  */
-        wabisabi_ge_mul(&kn.statement.equations[0].public_point, &x, &WABISABI_G);
-        kn.statement.equations[0].n_entries = 0;
-        equation_add_entry(&kn.statement.equations[0], 0, &WABISABI_G);
+        wabisabi_ge_mul(&kn->statement.equations[0].public_point, &x, &WABISABI_G);
+        kn->statement.equations[0].n_entries = 0;
+        equation_add_entry(&kn->statement.equations[0], 0, &WABISABI_G);
 
         /* eq1: x*Ga */
-        wabisabi_ge_mul(&kn.statement.equations[1].public_point, &x, &WABISABI_Ga);
-        kn.statement.equations[1].n_entries = 0;
-        equation_add_entry(&kn.statement.equations[1], 0, &WABISABI_Ga);
+        wabisabi_ge_mul(&kn->statement.equations[1].public_point, &x, &WABISABI_Ga);
+        kn->statement.equations[1].n_entries = 0;
+        equation_add_entry(&kn->statement.equations[1], 0, &WABISABI_Ga);
 
-        kn.witness[0] = x;
-        CHECK("Chaum-Pedersen dlog equality", prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+        kn->witness[0] = x;
+        CHECK("Chaum-Pedersen dlog equality", prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
     }
+
+    free(kn);
 }
 
 /* ================================================================== */
@@ -618,36 +634,37 @@ test_balance_proof(void) {
                  {2147483646U, 2147483647U},
                  {2147483647U, 2147483646U}};
 
+    wabisabi_knowledge_t* kn = malloc(sizeof(*kn));
+
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         wabisabi_scalar_t z = scalar_from_u32(cases[i].z);
         wabisabi_scalar_t rd = scalar_from_u32(cases[i].rd);
 
-        wabisabi_knowledge_t kn;
-        wabisabi_balance_proof_knowledge_into(&kn, &z, &rd);
+        wabisabi_balance_proof_knowledge_into(kn, &z, &rd);
         char lbl[64];
         snprintf(lbl, sizeof(lbl), "balance(z=%u,rd=%u)", cases[i].z, cases[i].rd);
-        CHECK(lbl, prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+        CHECK(lbl, prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
     }
 
     /* Tampered z witness fails */
     {
         wabisabi_scalar_t z = scalar_from_u32(5);
         wabisabi_scalar_t rd = scalar_from_u32(3);
-        wabisabi_knowledge_t kn;
-        wabisabi_balance_proof_knowledge_into(&kn, &z, &rd);
-        kn.witness[0] = scalar_from_u32(6);
-        CHECK("balance wrong z fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+        wabisabi_balance_proof_knowledge_into(kn, &z, &rd);
+        kn->witness[0] = scalar_from_u32(6);
+        CHECK("balance wrong z fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
     }
 
     /* Tampered r_delta witness fails */
     {
         wabisabi_scalar_t z = scalar_from_u32(5);
         wabisabi_scalar_t rd = scalar_from_u32(3);
-        wabisabi_knowledge_t kn;
-        wabisabi_balance_proof_knowledge_into(&kn, &z, &rd);
-        kn.witness[1] = scalar_from_u32(4);
-        CHECK("balance wrong r_delta fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, &kn, 1, ZERO_RND, 32));
+        wabisabi_balance_proof_knowledge_into(kn, &z, &rd);
+        kn->witness[1] = scalar_from_u32(4);
+        CHECK("balance wrong r_delta fails", !prove_and_verify(LABEL, sizeof(LABEL) - 1, kn, 1, ZERO_RND, 32));
     }
+
+    free(kn);
 }
 
 /* ================================================================== */
@@ -674,6 +691,9 @@ test_range_proof(void) {
                                     0x04, 0x05, 0x06, 0x07, 0x08, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60,
                                     0x70, 0x80, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x11, 0x22};
 
+    wabisabi_range_proof_t* rp = malloc(sizeof(*rp));
+    wabisabi_statement_t* stmt = malloc(sizeof(*stmt));
+
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         wabisabi_scalar_t a = scalar_from_u32(cases[i].amount);
         int width = cases[i].width;
@@ -681,25 +701,25 @@ test_range_proof(void) {
         wabisabi_ge_t ma;
         wabisabi_pedersen_commit(&ma, &a, &randomness);
 
-        wabisabi_range_proof_t rp;
-        wabisabi_range_proof_knowledge_into(&rp, &a, &randomness, width, rnd, 32);
-
-        wabisabi_statement_t stmt;
-        wabisabi_range_proof_statement_into(&stmt, &ma, rp.bit_commitments, width);
+        wabisabi_range_proof_knowledge_into(rp, &a, &randomness, width, rnd, 32);
+        wabisabi_range_proof_statement_into(stmt, &ma, rp->bit_commitments, width);
 
         wabisabi_transcript_t t1, t2;
         wabisabi_transcript_init(&t1, LABEL, sizeof(LABEL) - 1);
         wabisabi_transcript_clone(&t2, &t1);
 
         wabisabi_proof_t proof;
-        wabisabi_prove(&proof, &t1, &rp.knowledge, 1, rnd, 32);
-        int ok = wabisabi_verify(&t2, &stmt, 1, &proof, 1);
+        wabisabi_prove(&proof, &t1, &rp->knowledge, 1, rnd, 32);
+        int ok = wabisabi_verify(&t2, stmt, 1, &proof, 1);
 
         char lbl[64];
         snprintf(lbl, sizeof(lbl), "range(amount=%u, width=%d) → %s", cases[i].amount, width,
                  cases[i].pass ? "pass" : "fail");
         CHECK(lbl, ok == cases[i].pass);
     }
+
+    free(rp);
+    free(stmt);
 }
 
 /* ================================================================== */
@@ -719,11 +739,11 @@ test_zero_proofs(void) {
     wabisabi_ge_mul(&ma0, &r0, &WABISABI_Gh);
     wabisabi_ge_mul(&ma1, &r1, &WABISABI_Gh);
 
-    wabisabi_knowledge_t kn[2];
+    wabisabi_knowledge_t* kn = malloc(2 * sizeof(*kn));
     wabisabi_zero_proof_knowledge_into(&kn[0], &ma0, &r0);
     wabisabi_zero_proof_knowledge_into(&kn[1], &ma1, &r1);
 
-    wabisabi_statement_t stmts[2];
+    wabisabi_statement_t* stmts = malloc(2 * sizeof(*stmts));
     wabisabi_zero_proof_statement_into(&stmts[0], &ma0);
     wabisabi_zero_proof_statement_into(&stmts[1], &ma1);
 
@@ -740,17 +760,18 @@ test_zero_proofs(void) {
     wabisabi_ge_t ma_nonzero;
     wabisabi_pedersen_commit(&ma_nonzero, &one_amount, &r0);
 
-    wabisabi_knowledge_t kn_bad;
-    wabisabi_zero_proof_knowledge_into(&kn_bad, &ma_nonzero, &r0);
-    wabisabi_statement_t stmt_bad;
-    wabisabi_zero_proof_statement_into(&stmt_bad, &ma_nonzero);
+    /* single-item scratch, reused for both negative cases below */
+    wabisabi_knowledge_t* kn_x = malloc(sizeof(*kn_x));
+    wabisabi_statement_t* stmt_x = malloc(sizeof(*stmt_x));
+    wabisabi_zero_proof_knowledge_into(kn_x, &ma_nonzero, &r0);
+    wabisabi_zero_proof_statement_into(stmt_x, &ma_nonzero);
 
     wabisabi_transcript_init(&t1, LABEL, sizeof(LABEL) - 1);
     wabisabi_transcript_clone(&t2, &t1);
 
     wabisabi_proof_t proof_bad;
-    wabisabi_prove(&proof_bad, &t1, &kn_bad, 1, ZERO_RND, 32);
-    CHECK("non-zero amount fails zero proof", !wabisabi_verify(&t2, &stmt_bad, 1, &proof_bad, 1));
+    wabisabi_prove(&proof_bad, &t1, kn_x, 1, ZERO_RND, 32);
+    CHECK("non-zero amount fails zero proof", !wabisabi_verify(&t2, stmt_x, 1, &proof_bad, 1));
 
     /* Proofs are NOT interchangeable between different ma values */
     {
@@ -758,18 +779,21 @@ test_zero_proofs(void) {
         wabisabi_ge_t ma2;
         wabisabi_ge_mul(&ma2, &r2, &WABISABI_Gh);
 
-        wabisabi_knowledge_t kn2;
-        wabisabi_zero_proof_knowledge_into(&kn2, &ma0, &r0);
-        wabisabi_statement_t stmt2;
-        wabisabi_zero_proof_statement_into(&stmt2, &ma2); /* different ma */
+        wabisabi_zero_proof_knowledge_into(kn_x, &ma0, &r0);
+        wabisabi_zero_proof_statement_into(stmt_x, &ma2); /* different ma */
 
         wabisabi_transcript_init(&t1, LABEL, sizeof(LABEL) - 1);
         wabisabi_transcript_clone(&t2, &t1);
 
         wabisabi_proof_t proof2;
-        wabisabi_prove(&proof2, &t1, &kn2, 1, ZERO_RND, 32);
-        CHECK("proof for ma0 fails against ma2 statement", !wabisabi_verify(&t2, &stmt2, 1, &proof2, 1));
+        wabisabi_prove(&proof2, &t1, kn_x, 1, ZERO_RND, 32);
+        CHECK("proof for ma0 fails against ma2 statement", !wabisabi_verify(&t2, stmt_x, 1, &proof2, 1));
     }
+
+    free(kn);
+    free(stmts);
+    free(kn_x);
+    free(stmt_x);
 }
 
 /* ================================================================== */

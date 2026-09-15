@@ -215,8 +215,10 @@ test_zero_proof(void) {
     wabisabi_ge_t ma;
     wabisabi_ge_mul(&ma, &r, &WABISABI_Gh);
 
-    wabisabi_knowledge_t kn;
-    wabisabi_zero_proof_knowledge_into(&kn, &ma, &r);
+    /* knowledge/statement are ~600 KB each — heap-allocate (see the note in
+     * tests/test_stack.c); real callers never put these on the stack. */
+    wabisabi_knowledge_t* kn = malloc(sizeof(*kn));
+    wabisabi_zero_proof_knowledge_into(kn, &ma, &r);
 
     uint8_t rnd[32];
     next_random(rnd);
@@ -226,13 +228,15 @@ test_zero_proof(void) {
     wabisabi_transcript_clone(&t2, &t1);
 
     wabisabi_proof_t proof;
-    wabisabi_prove(&proof, &t1, &kn, 1, rnd, 32);
+    wabisabi_prove(&proof, &t1, kn, 1, rnd, 32);
 
-    wabisabi_statement_t stmt;
-    wabisabi_zero_proof_statement_into(&stmt, &ma);
-    int ok = wabisabi_verify(&t2, &stmt, 1, &proof, 1);
+    wabisabi_statement_t* stmt = malloc(sizeof(*stmt));
+    wabisabi_zero_proof_statement_into(stmt, &ma);
+    int ok = wabisabi_verify(&t2, stmt, 1, &proof, 1);
     assert(ok);
 
+    free(kn);
+    free(stmt);
     printf("  Zero proof OK\n");
 }
 
