@@ -28,8 +28,15 @@
  *     [req_0_value:8 LE][req_0_randomness:32][req_0_ma:33]
  *     [req_1_value:8 LE][req_1_randomness:32][req_1_ma:33]
  *
- *   MutableIssuerState (variable, max WABISABI_ISSUER_MSTATE_MAX_SIZE bytes):
- *     [balance:8 LE][count:4 LE][serial_0:GE_SIZE]...[serial_n-1:GE_SIZE]
+ *   MutableIssuerState (WABISABI_ISSUER_MSTATE_MAX_SIZE bytes):
+ *     [balance:8 LE]
+ *
+ * NOTE: the issuer does NOT track serial numbers. Double-spend prevention
+ * (rejecting duplicated or previously-seen serial numbers) is a policy concern
+ * left to the caller — the presented serial numbers are available to the host
+ * from the request it constructed, so it can maintain its own nullifier set.
+ * The C library performs only the cryptographic verification and the balance
+ * bookkeeping; the mutable issuer state it round-trips is just the balance.
  */
 #pragma once
 #include <stddef.h>
@@ -72,10 +79,9 @@ _Static_assert(WABISABI_IPARAMS_SIZE == 66, "iparams size mismatch");
  *   strobe(203) + n_requested(4) + 2*(value(8)+randomness(32)+ma(33)) = 353 bytes */
 #define WABISABI_VALIDATION_SIZE 353
 
-/* Mutable issuer state: balance(8) + count(4) + count*GE_SIZE */
-#define WABISABI_MAX_SERIAL_NUMBERS  65536
-#define WABISABI_ISSUER_MSTATE_MAX_SIZE \
-    (8 + 4 + WABISABI_MAX_SERIAL_NUMBERS * WABISABI_GE_SIZE)
+/* Mutable issuer state: just the running balance (8 bytes, LE). Serial-number
+ * tracking is the caller's responsibility (see the header comment above). */
+#define WABISABI_ISSUER_MSTATE_MAX_SIZE 8
 
 /* Upper bound on a serialized request/response for any range-proof width up to
  * WABISABI_MAX_RANGE_WIDTH. A real request grows with the range-proof width
@@ -95,11 +101,17 @@ typedef enum {
     WABISABI_ERR_INVALID_PROOF = 4,
     WABISABI_ERR_INVALID_CRED_COUNT = 5,
     WABISABI_ERR_INVALID_BIT_COMMITMENT = 6,
+    /* Produced when a single request presents the same serial number twice
+     * (a stateless within-request double-spend guard). */
     WABISABI_ERR_SERIAL_DUPLICATED = 7,
+    /* 8/10 are retained for ABI stability but are no longer produced by the
+     * issuer: cross-request serial-reuse detection and the capacity cap moved
+     * to the caller (see the MutableIssuerState note above). */
     WABISABI_ERR_SERIAL_REUSED = 8,
     WABISABI_ERR_NEGATIVE_BALANCE = 9,
-    WABISABI_ERR_SERIAL_SET_FULL = 10, /* serial number set at capacity */
+    WABISABI_ERR_SERIAL_SET_FULL = 10,
     WABISABI_ERR_BUFFER_TOO_SMALL = 11, /* an output buffer capacity is too small for the result */
+    WABISABI_ERR_ALLOC = 12, /* heap allocation failed (no longer used by the issuer) */
 } wabisabi_error_t;
 
 #ifdef __cplusplus

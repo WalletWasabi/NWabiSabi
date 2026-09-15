@@ -34,9 +34,11 @@ CREDENTIAL_COUNT = 2
 #   strobe(203) + n_requested(4) + 2*(value(8)+randomness(32)+ma(33)) = 353
 VALIDATION_SIZE = 353
 
-# Mutable issuer state: balance(8) + count(4) + count*GE_SIZE
-ISSUER_MAX_SERIALS = 65536
-ISSUER_MSTATE_MAX_SIZE = 8 + 4 + ISSUER_MAX_SERIALS * GE_SIZE
+# Mutable issuer state carried across calls: just the running balance (8-byte
+# little-endian). The native library does NOT track serial numbers — cross-request
+# double-spend prevention is the caller's responsibility (see the CredentialIssuer
+# wrapper in __init__.py). Mirrors WABISABI_ISSUER_MSTATE_MAX_SIZE in the C header.
+ISSUER_MSTATE_MAX_SIZE = 8
 
 # Output buffer the C header guarantees is always large enough for any request or
 # response (a real request grows with the range-proof width and can exceed 16 KiB).
@@ -71,8 +73,9 @@ _ERROR_NAMES = {
     11: "WABISABI_ERR_BUFFER_TOO_SMALL",
 }
 
-# Error codes the ownership-proof facade branches on (subset of the above).
+# Error codes the wrappers branch on / raise (subset of the above).
 WABISABI_ERR_INVALID_PROOF = 4
+WABISABI_ERR_SERIAL_REUSED = 8  # raised by the CredentialIssuer wrapper on cross-request reuse
 
 
 class WabiSabiError(Exception):

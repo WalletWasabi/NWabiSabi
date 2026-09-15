@@ -44,11 +44,13 @@ internal static class NativeWabi
     /// </summary>
     public const int ValidationSize      = 353;
 
-    /// <summary>Maximum number of serial numbers tracked by the issuer.</summary>
-    public const int IssuerMaxSerials    = 65536;
-
-    /// <summary>Maximum size of the serialized mutable issuer state in bytes.</summary>
-    public const int IssuerMStateMaxSize = 8 + 4 + IssuerMaxSerials * GeSize;
+    /// <summary>
+    /// Size of the serialized mutable issuer state in bytes. The native library does
+    /// not track serial numbers (that is the caller's responsibility — see
+    /// <see cref="CredentialIssuer"/>), so the only mutable state is the running
+    /// balance (8-byte little-endian).
+    /// </summary>
+    public const int IssuerMStateMaxSize = 8;
 
     /// <summary>
     /// Recommended size (and upper bound) for request/response output buffers, mirroring

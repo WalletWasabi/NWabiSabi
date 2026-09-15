@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using WabiSabi.Crypto;
+using WabiSabi.Crypto.Groups;
 using WabiSabi.Crypto.Randomness;
 using WabiSabi.CredentialRequesting;
 
@@ -21,8 +24,13 @@ public class CredentialIssuer
     private readonly byte[] _skBytes;
     private readonly WasabiRandom _rng;
     private readonly byte[] _mstateOutBuf; // pre-allocated output buffer (IssuerMStateMaxSize)
-    private byte[] _currentMstate;         // compact serialized mutable state
+    private byte[] _currentMstate;         // compact serialized mutable state (just the balance)
     private readonly object _lock = new();
+
+    // The native library performs only cryptographic verification and balance
+    // bookkeeping; it does NOT track serial numbers. Double-spend prevention
+    // lives here, mirroring the managed WabiSabi.Crypto.CredentialIssuer.
+    private readonly HashSet<GroupElement> _serialNumbers = new();
 
     public CredentialIssuer(
         CredentialIssuerSecretKey credentialIssuerSecretKey,
@@ -72,8 +80,26 @@ public class CredentialIssuer
 
         var respOut = new byte[NativeWabi.MaxRequestSize];
 
+        // Check all the serial numbers are unique within the request. Even
+        // presenting a previously-unused credential more than once in the same
+        // request is a double spend. (No-op for a zero request: it presents none.)
+        if (registrationRequest.AreThereDuplicatedSerialNumbers())
+            throw new WabiSabiCryptoException(WabiSabiCryptoErrorCode.SerialNumberDuplicated);
+
+        var presentedSerialNumbers = registrationRequest.SerialNumbers().ToArray();
+
         lock (_lock)
         {
+            // Reject serial numbers seen in a previous (valid) request. Note the
+            // serials are not cryptographically verified yet, but a request with
+            // an invalid proof and a reused serial number is rejected regardless.
+            if (presentedSerialNumbers.Any(_serialNumbers.Contains))
+                throw new WabiSabiCryptoException(WabiSabiCryptoErrorCode.SerialNumberAlreadyUsed, "Serial number reused");
+
+            // Tentatively record them; roll back below if the native call fails.
+            foreach (var s in presentedSerialNumbers)
+                _serialNumbers.Add(s);
+
             int respLen, mstateOutLen;
             int rc = isZero
                 ? NativeWabi.IssuerHandleZero(
@@ -92,7 +118,14 @@ public class CredentialIssuer
                     _mstateOutBuf, _mstateOutBuf.Length, out mstateOutLen);
 
             if (rc != 0)
+            {
+                // The request was rejected (e.g. invalid proofs); its serial
+                // numbers were unused, so release them to keep the nullifier set
+                // from being clogged with serials from invalid requests.
+                foreach (var s in presentedSerialNumbers)
+                    _serialNumbers.Remove(s);
                 throw new WabiSabiCryptoException(MapError(rc), $"C issuer returned error code {rc}.");
+            }
 
             // Store compact copy of the updated mutable state.
             _currentMstate = _mstateOutBuf[..mstateOutLen];

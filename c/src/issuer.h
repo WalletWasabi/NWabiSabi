@@ -40,25 +40,17 @@ typedef struct {
     wabisabi_proof_t proofs[WABISABI_CREDENTIAL_COUNT]; /* issuer params proofs */
 } wabisabi_response_t;
 
-/* Serial number set (simple open-addressing hash table) */
-typedef struct {
-    uint8_t entries[WABISABI_MAX_SERIAL_NUMBERS][WABISABI_GE_SIZE]; /* compressed points */
-    int used[WABISABI_MAX_SERIAL_NUMBERS];
-    int count;
-} wabisabi_serial_set_t;
-
-int wabisabi_serial_set_contains(const wabisabi_serial_set_t* set, const wabisabi_ge_t* s);
-int wabisabi_serial_set_insert(wabisabi_serial_set_t* set, const wabisabi_ge_t* s);
-void wabisabi_serial_set_remove(wabisabi_serial_set_t* set, const wabisabi_ge_t* s);
-
-/* ---- Issuer state ---- */
+/* ---- Issuer state ----
+ *
+ * The issuer does NOT track serial numbers; double-spend prevention is left to
+ * the caller (see wabisabi_ffi.h). The only mutable state is the balance, so
+ * this struct is small and can live on the stack. */
 typedef struct {
     wabisabi_sk_t sk;
     wabisabi_iparams_t iparams;
     int64_t max_amount;
     int range_proof_width;
     int64_t balance;
-    wabisabi_serial_set_t serial_numbers;
 } wabisabi_issuer_state_t;
 
 /* Initialize issuer with secret key (must be non-zero scalars) */

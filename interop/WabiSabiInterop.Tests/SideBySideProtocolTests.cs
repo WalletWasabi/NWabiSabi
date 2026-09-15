@@ -99,6 +99,33 @@ public class SideBySideProtocolTests
     }
 
     // -----------------------------------------------------------------------
+    // Double-spend prevention — the native wrapper tracks serial numbers in
+    // managed code (the C library itself no longer does), and must reject a
+    // replayed presentation exactly like the C# reference issuer.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void ReplayedPresentation_IsRejectedAsSerialReuse_InBothImplementations()
+    {
+        var (cs, native) = MakeProtocolPairs();
+
+        // Bootstrap, then spend the zero-credentials once (accepted).
+        var csZero     = RunZeroRound(cs.Client, cs.Issuer);
+        var nativeZero = RunZeroRound(native.Client, native.Issuer);
+        RunRealRound(cs.Client, cs.Issuer, csZero);
+        RunRealRound(native.Client, native.Issuer, nativeZero);
+
+        // Presenting the very same credentials again reuses their serial numbers.
+        var csEx = Assert.Throws<WabiSabiCryptoException>(
+            () => RunRealRound(cs.Client, cs.Issuer, csZero));
+        var nativeEx = Assert.Throws<WabiSabiCryptoException>(
+            () => RunRealRound(native.Client, native.Issuer, nativeZero));
+
+        Assert.Equal(WabiSabiCryptoErrorCode.SerialNumberAlreadyUsed, csEx.ErrorCode);
+        Assert.Equal(WabiSabiCryptoErrorCode.SerialNumberAlreadyUsed, nativeEx.ErrorCode);
+    }
+
+    // -----------------------------------------------------------------------
     // Protocol drivers (identical API on both the reference and native types)
     // -----------------------------------------------------------------------
 

@@ -29,7 +29,9 @@ The shared library lands at `build/libwabisabi.so`. Rebuild it before running th
 
 ## Statelessness
 
-The C library holds **no** mutable state between calls. The issuer's serial-number set + balance (`MutableIssuerState`) and the client's request-validation data (`ValidationState`, fixed 353 bytes including a serialized STROBE transcript) are serialized out and passed back in on each call. This is deliberate, to make the FFI embeddable from any host.
+The C library holds **no** mutable state between calls. The issuer's balance (`MutableIssuerState`, now just an 8-byte LE balance) and the client's request-validation data (`ValidationState`, fixed 353 bytes including a serialized STROBE transcript) are serialized out and passed back in on each call. This is deliberate, to make the FFI embeddable from any host.
+
+The C library does **not** track serial numbers: double-spend prevention (rejecting duplicated/reused serials) is left to the caller. The managed `WabiSabi.Native.CredentialIssuer` wrapper implements it with a `HashSet<GroupElement>`, mirroring the managed reference. The library performs only cryptographic verification and balance bookkeeping.
 
 ## Known divergence (the open problem)
 

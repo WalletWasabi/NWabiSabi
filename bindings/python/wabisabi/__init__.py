@@ -112,7 +112,18 @@ class CredentialIssuer:
     """Stateful issuer (coordinator) over the stateless native library.
 
     Holds the secret key, the value bound, and the serialized mutable issuer
-    state (serial-number set + balance), advancing it on each request.
+    state (the running balance), advancing it on each request.
+
+    Double-spend prevention: the native library performs only cryptographic
+    verification and balance bookkeeping and does NOT remember serial numbers
+    between calls, so this wrapper tracks the serial numbers of accepted
+    presentations in memory and rejects a request that replays one. (The native
+    library still rejects a request that presents the same serial twice within a
+    single request.) This mirrors the C# ``WabiSabi.Native.CredentialIssuer`` and
+    the managed reference. The serial set is in-memory only — like the reference
+    it is not part of the persistable :attr:`mstate`; a coordinator that resumes
+    from a persisted ``mstate`` after a restart must persist and restore its own
+    serial set too, or it will accept replays of pre-restart credentials.
 
     Not thread-safe; guard with your own lock if shared across threads.
     """
@@ -123,7 +134,8 @@ class CredentialIssuer:
         self._sk = bytes(sk_bytes)
         self.max_amount = int(max_amount)
         self._rng = rng
-        self._mstate = b""  # initial state: balance = 0, no serials
+        self._mstate = b""  # initial state: balance = 0
+        self._serials: set[bytes] = set()  # serial numbers of accepted presentations
 
     @property
     def iparams(self) -> bytes:
@@ -139,7 +151,11 @@ class CredentialIssuer:
 
     @property
     def mstate(self) -> bytes:
-        """Opaque serialized mutable state (persist this to resume later)."""
+        """Opaque serialized mutable state — the balance (persist to resume later).
+
+        Note this does NOT include the serial-number set (see the class docs);
+        persisting double-spend state across a restart is the caller's job.
+        """
         return self._mstate
 
     @mstate.setter
@@ -154,11 +170,46 @@ class CredentialIssuer:
         return resp
 
     def handle_real(self, request_bytes: bytes) -> bytes:
-        """Process a real request, advance state, return the response."""
+        """Process a real request, advance state, return the response.
+
+        Rejects a request that replays a serial number accepted by an earlier
+        request (raises :class:`WabiSabiError` with the SERIAL_REUSED code)
+        before touching the native library; serials of an accepted request are
+        recorded only after the native call succeeds.
+        """
+        serials = self._presented_serials(request_bytes)
+        for s in serials:
+            if s in self._serials:
+                raise WabiSabiError(_native.WABISABI_ERR_SERIAL_REUSED, "issuer_handle_real")
+
+        # Raises WabiSabiError on any native rejection (bad proofs, negative
+        # balance, or a within-request duplicate serial), leaving _serials
+        # untouched — so nothing is committed for a rejected request.
         resp, self._mstate = _native.issuer_handle_real(
             self._sk, self.max_amount, self._mstate,
             request_bytes, self._rng(_native.RAND_SIZE))
+        self._serials.update(serials)
         return resp
+
+    @staticmethod
+    def _presented_serials(request_bytes: bytes) -> "list[bytes]":
+        """Extract the presented serial numbers (S) from a real-request blob.
+
+        RealRequest layout is ``[delta:8][presentation_0]...[presentation_{k-1}]...``
+        where each presentation is ``[Ca][Cx0][Cx1][CV][S]`` of GE_SIZE-byte group
+        elements; the serial number S is the last one. Returns ``[]`` if the blob
+        is too short to parse (the native call then rejects it and reports why).
+        """
+        serials: list[bytes] = []
+        off = _native.VALUE_SIZE                # skip the 8-byte delta
+        s_off = 4 * _native.GE_SIZE             # S is the 5th group element
+        for _ in range(_native.CREDENTIAL_COUNT):
+            end = off + _native.PRESENTATION_SIZE
+            if end > len(request_bytes):
+                return []
+            serials.append(request_bytes[off + s_off:end])
+            off = end
+        return serials
 
 
 class Client:
