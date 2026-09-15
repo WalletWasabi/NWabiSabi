@@ -260,7 +260,7 @@ test_full_protocol(void) {
     memcpy(sk.x1.data, rand_bytes[3], 32);
     memcpy(sk.ya.data, rand_bytes[4], 32);
 
-    long max_amount = 1000000;
+    int64_t max_amount = 1000000;
 
     /* Initialize issuer */
     wabisabi_issuer_state_t issuer;
@@ -307,7 +307,7 @@ test_full_protocol(void) {
     /* --- Phase 2: Input registration (request value credentials) --- */
     printf("  Phase 2: Input registration...\n");
 
-    long amounts_to_request[] = {500000, 300000};
+    int64_t amounts_to_request[] = {500000, 300000};
     uint8_t client_rand2[32];
     next_random(client_rand2);
     wabisabi_real_request_t real_req;
@@ -332,12 +332,12 @@ test_full_protocol(void) {
         assert(0);
     }
 
-    long total = 0;
+    int64_t total = 0;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        printf("    Credential[%d]: value=%ld\n", i, new_credentials[i].value);
+        printf("    Credential[%d]: value=%lld\n", i, (long long)new_credentials[i].value);
         total += new_credentials[i].value;
     }
-    printf("  Total value: %ld (expected: 800000)\n", total);
+    printf("  Total value: %lld (expected: 800000)\n", (long long)total);
     assert(total == 800000);
 
     printf("  Full protocol OK\n");
