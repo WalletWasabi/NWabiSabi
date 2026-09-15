@@ -34,12 +34,27 @@ CREDENTIAL_COUNT = 2
 #   strobe(203) + n_requested(4) + 2*(value(8)+randomness(32)+ma(33)) = 353
 VALIDATION_SIZE = 353
 
-# Mutable issuer state: balance(8) + count(4) + count*GE_SIZE
-ISSUER_MAX_SERIALS = 65536
-ISSUER_MSTATE_MAX_SIZE = 8 + 4 + ISSUER_MAX_SERIALS * GE_SIZE
+# Mutable issuer state carried across calls: just the running balance (8-byte
+# little-endian). The native library does NOT track serial numbers — cross-request
+# double-spend prevention is the caller's responsibility (see the CredentialIssuer
+# wrapper in __init__.py). Mirrors WABISABI_ISSUER_MSTATE_MAX_SIZE in the C header.
+ISSUER_MSTATE_MAX_SIZE = 8
 
-# Output buffer the C header guarantees is always large enough for any response.
-_RESP_BUF_SIZE = 16 * 1024
+# Output buffer the C header guarantees is always large enough for any request or
+# response (a real request grows with the range-proof width and can exceed 16 KiB).
+MAX_REQUEST_SIZE = 64 * 1024
+_RESP_BUF_SIZE = MAX_REQUEST_SIZE
+
+# ---- Ownership proofs (SLIP-0019 / BIP-322) ----
+# A serialized ownership proof is a small proof body plus one BIP-322 witness;
+# 4 KiB is always sufficient (mirrors NativeWabi.MaxOwnershipProofSize).
+MAX_OWNERSHIP_PROOF_SIZE = 4 * 1024
+OWNERSHIP_ID_SIZE = 32          # one ownership identifier (HMAC-SHA256 output)
+PRIVKEY_SIZE = 32               # 32-byte private key
+
+# scriptPubKey type selector (mirror of wabisabi_spk_type_t).
+SPK_P2WPKH = 0                  # Segwit v0 (P2WPKH)
+SPK_P2TR = 1                    # Taproot key-path, BIP-86 (P2TR)
 
 # ---- Error codes (mirror of wabisabi_error_t) ----
 WABISABI_OK = 0
@@ -55,7 +70,12 @@ _ERROR_NAMES = {
     8: "WABISABI_ERR_SERIAL_REUSED",
     9: "WABISABI_ERR_NEGATIVE_BALANCE",
     10: "WABISABI_ERR_SERIAL_SET_FULL",
+    11: "WABISABI_ERR_BUFFER_TOO_SMALL",
 }
+
+# Error codes the wrappers branch on / raise (subset of the above).
+WABISABI_ERR_INVALID_PROOF = 4
+WABISABI_ERR_SERIAL_REUSED = 8  # raised by the CredentialIssuer wrapper on cross-request reuse
 
 
 class WabiSabiError(Exception):
@@ -156,8 +176,8 @@ _lib.wabisabi_issuer_handle_zero.argtypes = [
     ctypes.c_char_p, ctypes.c_int,   # mstate_in, mstate_in_len
     ctypes.c_char_p, ctypes.c_int,   # req_bytes, req_len
     ctypes.c_char_p,                 # rand_bytes
-    ctypes.c_char_p, _c_intp,        # resp_out, resp_len_out
-    ctypes.c_char_p, _c_intp,        # mstate_out, mstate_out_len
+    ctypes.c_char_p, ctypes.c_int, _c_intp,  # resp_out, resp_out_cap, resp_len_out
+    ctypes.c_char_p, ctypes.c_int, _c_intp,  # mstate_out, mstate_out_cap, mstate_out_len
 ]
 
 _lib.wabisabi_issuer_handle_real.restype = ctypes.c_int
@@ -165,9 +185,9 @@ _lib.wabisabi_issuer_handle_real.argtypes = _lib.wabisabi_issuer_handle_zero.arg
 
 _lib.wabisabi_client_create_zero_request.restype = ctypes.c_int
 _lib.wabisabi_client_create_zero_request.argtypes = [
-    ctypes.c_char_p,                 # rand_bytes
-    ctypes.c_char_p, _c_intp,        # req_out, req_len_out
-    ctypes.c_char_p,                 # val_out[VALIDATION_SIZE]
+    ctypes.c_char_p,                       # rand_bytes
+    ctypes.c_char_p, ctypes.c_int, _c_intp,  # req_out, req_out_cap, req_len_out
+    ctypes.c_char_p,                       # val_out[VALIDATION_SIZE]
 ]
 
 _lib.wabisabi_client_create_real_request.restype = ctypes.c_int
@@ -177,7 +197,7 @@ _lib.wabisabi_client_create_real_request.argtypes = [
     ctypes.POINTER(ctypes.c_int64), ctypes.c_int,  # amounts, n_amounts
     ctypes.c_char_p, ctypes.c_int,         # creds_bytes, n_creds
     ctypes.c_char_p,                       # rand_bytes
-    ctypes.c_char_p, _c_intp,              # req_out, req_len_out
+    ctypes.c_char_p, ctypes.c_int, _c_intp,  # req_out, req_out_cap, req_len_out
     ctypes.c_char_p,                       # val_out[VALIDATION_SIZE]
 ]
 
@@ -186,7 +206,25 @@ _lib.wabisabi_client_handle_response.argtypes = [
     ctypes.c_char_p,                 # iparams_bytes
     ctypes.c_char_p, ctypes.c_int,   # resp_bytes, resp_len
     ctypes.c_char_p,                 # val_bytes[VALIDATION_SIZE]
-    ctypes.c_char_p, _c_intp,        # creds_out, n_creds_out
+    ctypes.c_char_p, ctypes.c_int, _c_intp,  # creds_out, creds_out_cap, n_creds_out
+]
+
+_lib.wabisabi_ownership_proof_generate.restype = ctypes.c_int
+_lib.wabisabi_ownership_proof_generate.argtypes = [
+    ctypes.c_char_p,                 # privkey[32]
+    ctypes.c_int,                    # spk_type
+    ctypes.c_char_p, ctypes.c_int,   # identifiers, n_identifiers
+    ctypes.c_char_p, ctypes.c_int,   # commitment, commitment_len
+    ctypes.c_int,                    # user_confirmation
+    ctypes.c_char_p, ctypes.c_int, _c_intp,  # out, out_cap, out_len
+]
+
+_lib.wabisabi_ownership_proof_verify.restype = ctypes.c_int
+_lib.wabisabi_ownership_proof_verify.argtypes = [
+    ctypes.c_char_p, ctypes.c_int,   # proof_bytes, proof_len
+    ctypes.c_char_p, ctypes.c_int,   # script_pubkey, script_pubkey_len
+    ctypes.c_char_p, ctypes.c_int,   # commitment, commitment_len
+    ctypes.c_int,                    # require_user_confirmation
 ]
 
 
@@ -232,8 +270,8 @@ def _issuer_handle(func, fname: str, sk_bytes, max_amount, mstate_in, req_bytes,
         bytes(mstate_in), len(mstate_in),
         bytes(req_bytes), len(req_bytes),
         bytes(rand_bytes),
-        resp_out, ctypes.byref(resp_len),
-        mstate_out, ctypes.byref(mstate_len),
+        resp_out, _RESP_BUF_SIZE, ctypes.byref(resp_len),
+        mstate_out, ISSUER_MSTATE_MAX_SIZE, ctypes.byref(mstate_len),
     )
     _check(code, fname)
     return resp_out.raw[:resp_len.value], mstate_out.raw[:mstate_len.value]
@@ -262,7 +300,7 @@ def client_create_zero_request(rand_bytes: bytes):
     val_out = ctypes.create_string_buffer(VALIDATION_SIZE)
     _check(
         _lib.wabisabi_client_create_zero_request(
-            bytes(rand_bytes), req_out, ctypes.byref(req_len), val_out),
+            bytes(rand_bytes), req_out, _RESP_BUF_SIZE, ctypes.byref(req_len), val_out),
         "client_create_zero_request")
     return req_out.raw[:req_len.value], val_out.raw[:VALIDATION_SIZE]
 
@@ -294,7 +332,7 @@ def client_create_real_request(iparams_bytes, max_amount, amounts, creds_bytes, 
         amounts_arr, n_amounts,
         bytes(creds_bytes), n_creds,
         bytes(rand_bytes),
-        req_out, ctypes.byref(req_len),
+        req_out, _RESP_BUF_SIZE, ctypes.byref(req_len),
         val_out,
     )
     _check(code, "client_create_real_request")
@@ -308,13 +346,71 @@ def client_handle_response(iparams_bytes, resp_bytes, val_bytes):
     if len(val_bytes) != VALIDATION_SIZE:
         raise ValueError(f"val_bytes must be {VALIDATION_SIZE} bytes, got {len(val_bytes)}")
 
-    creds_out = ctypes.create_string_buffer(CREDENTIAL_COUNT * CREDENTIAL_SIZE)
+    creds_cap = CREDENTIAL_COUNT * CREDENTIAL_SIZE
+    creds_out = ctypes.create_string_buffer(creds_cap)
     n_creds = ctypes.c_int(0)
     code = _lib.wabisabi_client_handle_response(
         bytes(iparams_bytes),
         bytes(resp_bytes), len(resp_bytes),
         bytes(val_bytes),
-        creds_out, ctypes.byref(n_creds),
+        creds_out, creds_cap, ctypes.byref(n_creds),
     )
     _check(code, "client_handle_response")
     return creds_out.raw[:n_creds.value * CREDENTIAL_SIZE]
+
+
+# --------------------------------------------------------------------------
+# Ownership proofs (SLIP-0019 / BIP-322)
+# --------------------------------------------------------------------------
+
+def ownership_proof_generate(privkey, spk_type, identifiers, commitment, user_confirmation):
+    """Generate a serialized ownership proof.
+
+    ``privkey`` is 32 bytes; ``spk_type`` is :data:`SPK_P2WPKH` or
+    :data:`SPK_P2TR`; ``identifiers`` is the flat ``n × 32`` ownership-identifier
+    bytes (may be empty); ``commitment`` is arbitrary commitment bytes (may be
+    empty). Returns the serialized proof bytes.
+    """
+    if len(privkey) != PRIVKEY_SIZE:
+        raise ValueError(f"privkey must be {PRIVKEY_SIZE} bytes, got {len(privkey)}")
+    identifiers = identifiers or b""
+    commitment = commitment or b""
+    if len(identifiers) % OWNERSHIP_ID_SIZE != 0:
+        raise ValueError(
+            f"identifiers length must be a multiple of {OWNERSHIP_ID_SIZE}, got {len(identifiers)}")
+    n_identifiers = len(identifiers) // OWNERSHIP_ID_SIZE
+
+    out = ctypes.create_string_buffer(MAX_OWNERSHIP_PROOF_SIZE)
+    out_len = ctypes.c_int(0)
+    code = _lib.wabisabi_ownership_proof_generate(
+        bytes(privkey),
+        int(spk_type),
+        bytes(identifiers), n_identifiers,
+        bytes(commitment), len(commitment),
+        1 if user_confirmation else 0,
+        out, MAX_OWNERSHIP_PROOF_SIZE, ctypes.byref(out_len),
+    )
+    _check(code, "ownership_proof_generate")
+    return out.raw[:out_len.value]
+
+
+def ownership_proof_verify(proof_bytes, script_pubkey, commitment, require_user_confirmation):
+    """Verify a serialized ownership proof.
+
+    Returns ``True`` if valid, ``False`` if the signature/flags do not verify
+    (``WABISABI_ERR_INVALID_PROOF``); raises :class:`WabiSabiError` for a
+    malformed proof or other native error.
+    """
+    commitment = commitment or b""
+    script_pubkey = script_pubkey or b""
+    code = _lib.wabisabi_ownership_proof_verify(
+        bytes(proof_bytes), len(proof_bytes),
+        bytes(script_pubkey), len(script_pubkey),
+        bytes(commitment), len(commitment),
+        1 if require_user_confirmation else 0,
+    )
+    if code == WABISABI_OK:
+        return True
+    if code == WABISABI_ERR_INVALID_PROOF:
+        return False
+    raise WabiSabiError(code, "ownership_proof_verify")

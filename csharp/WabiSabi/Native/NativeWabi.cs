@@ -44,11 +44,13 @@ internal static class NativeWabi
     /// </summary>
     public const int ValidationSize      = 353;
 
-    /// <summary>Maximum number of serial numbers tracked by the issuer.</summary>
-    public const int IssuerMaxSerials    = 65536;
-
-    /// <summary>Maximum size of the serialized mutable issuer state in bytes.</summary>
-    public const int IssuerMStateMaxSize = 8 + 4 + IssuerMaxSerials * GeSize;
+    /// <summary>
+    /// Size of the serialized mutable issuer state in bytes. The native library does
+    /// not track serial numbers (that is the caller's responsibility — see
+    /// <see cref="CredentialIssuer"/>), so the only mutable state is the running
+    /// balance (8-byte little-endian).
+    /// </summary>
+    public const int IssuerMStateMaxSize = 8;
 
     /// <summary>
     /// Recommended size (and upper bound) for request/response output buffers, mirroring
@@ -163,4 +165,53 @@ internal static class NativeWabi
         [In] byte[] respBytes, int respLen,
         [In] byte[] valBytes,
         [Out] byte[] credsOut, int credsOutCap, out int nCredsOut);
+
+    // ---- Ownership proofs (SLIP-0019 / BIP-322) ----
+
+    /// <summary>Recommended output buffer size for a serialized ownership proof.
+    /// A proof is a small proof body plus a single BIP-322 witness; 4 KiB is always sufficient.</summary>
+    public const int MaxOwnershipProofSize = 4 * 1024;
+
+    /// <summary>scriptPubKey type selector for <see cref="OwnershipProofGenerate"/>.
+    /// Mirrors the C <c>wabisabi_spk_type_t</c> enum.</summary>
+    public const int SpkP2Wpkh = 0;
+    public const int SpkP2Tr = 1;
+
+    /// <summary>
+    /// Generate an ownership proof. The scriptPubKey is derived natively from
+    /// <paramref name="privkey"/> and <paramref name="spkType"/>.
+    /// </summary>
+    /// <param name="privkey">32-byte private key.</param>
+    /// <param name="spkType">SpkP2Wpkh or SpkP2Tr.</param>
+    /// <param name="identifiers">Flat n×32 ownership-identifier bytes (may be empty).</param>
+    /// <param name="nIdentifiers">Number of ownership identifiers.</param>
+    /// <param name="commitment">Commitment data bound into the signature hash (may be empty).</param>
+    /// <param name="commitmentLen">Length of commitment.</param>
+    /// <param name="userConfirmation">Non-zero sets the UserConfirmation flag.</param>
+    /// <param name="outBytes">Output buffer (MaxOwnershipProofSize bytes).</param>
+    /// <param name="outLen">Set to the serialized proof length on success.</param>
+    [DllImport(Lib, EntryPoint = "wabisabi_ownership_proof_generate", CallingConvention = CallingConvention.Cdecl)]
+    public static extern int OwnershipProofGenerate(
+        [In] byte[] privkey,
+        int spkType,
+        [In] byte[] identifiers, int nIdentifiers,
+        [In] byte[] commitment, int commitmentLen,
+        int userConfirmation,
+        [Out] byte[] outBytes, int outCap, out int outLen);
+
+    /// <summary>Verify a serialized ownership proof against a scriptPubKey and commitment.</summary>
+    /// <param name="proofBytes">Serialized ownership proof.</param>
+    /// <param name="proofLen">Length of proofBytes.</param>
+    /// <param name="scriptPubKey">scriptPubKey bytes the proof must be valid for.</param>
+    /// <param name="scriptPubKeyLen">Length of scriptPubKey.</param>
+    /// <param name="commitment">Commitment data bound into the signature hash (may be empty).</param>
+    /// <param name="commitmentLen">Length of commitment.</param>
+    /// <param name="requireUserConfirmation">Non-zero rejects proofs lacking the UserConfirmation flag.</param>
+    /// <returns>0 (WABISABI_OK) if valid; non-zero error code otherwise.</returns>
+    [DllImport(Lib, EntryPoint = "wabisabi_ownership_proof_verify", CallingConvention = CallingConvention.Cdecl)]
+    public static extern int OwnershipProofVerify(
+        [In] byte[] proofBytes, int proofLen,
+        [In] byte[] scriptPubKey, int scriptPubKeyLen,
+        [In] byte[] commitment, int commitmentLen,
+        int requireUserConfirmation);
 }

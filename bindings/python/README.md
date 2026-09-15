@@ -61,9 +61,38 @@ print([c.value for c in new_creds])   # -> [1000, 0]
 
 See `examples/roundtrip.py` for a runnable version.
 
+## Ownership proofs
+
+The bindings also expose SLIP-0019 / BIP-322 ownership proofs, byte-for-byte
+compatible with WalletWasabi's managed `OwnershipProof`. Proving ownership of a
+coin means demonstrating control of the private key that can spend its
+scriptPubKey; the verifier only needs the scriptPubKey, not the key.
+
+```python
+from wabisabi import OwnershipProof, OwnershipScriptPubKeyType
+
+key = bytes.fromhex("…32-byte private key…")
+commitment = b"coinjoin-input-commitment"
+identifiers = [bytes(range(1, 33))]        # zero or more 32-byte ids
+
+# Prover: the scriptPubKey is derived natively from the key and script type.
+proof = OwnershipProof.generate(
+    key, commitment, identifiers,
+    OwnershipScriptPubKeyType.SEGWIT, user_confirmation=True)
+
+# Verifier (has the scriptPubKey, not the key):
+ok = OwnershipProof.verify(proof, script_pubkey, commitment,
+                           require_user_confirmation=True)
+```
+
+`generate` returns the serialized proof (identical to `OwnershipProof.ToBytes()`
+on the C# side). `verify` returns `True`/`False` for a valid/invalid signature
+and raises `WabiSabiError` on a malformed proof. See
+`examples/ownership_proof.py`.
+
 ## API
 
-The public surface is just four names:
+The public surface is small:
 
 - `CredentialIssuer(sk_bytes, max_amount)` — `.iparams`, `.balance`,
   `.mstate` (persist/restore), `.handle_zero(req)`, `.handle_real(req)`.
@@ -71,6 +100,8 @@ The public surface is just four names:
   `.create_real_request(amounts, creds)`, `.handle_response(resp, val)`.
 - `Credential` — `value`, `randomness`, `mac_t`, `mac_v`; `.to_bytes()`,
   `.parse()`, `.pack()`, `.unpack()`.
+- `OwnershipProof` — `.generate(...)`, `.verify(...)` (static); with
+  `OwnershipScriptPubKeyType` (`SEGWIT` / `TAPROOT_BIP86`).
 - `WabiSabiError` — raised when the native library reports an error.
 
 The raw `ctypes` FFI (1:1 with `c/include/wabisabi_ffi.h`) and the runtime

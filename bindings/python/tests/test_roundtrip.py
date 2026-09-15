@@ -62,17 +62,44 @@ def test_full_roundtrip():
     assert sorted(c.value for c in new_creds) == [0, 1000]
 
 
+def test_double_spend_replay_is_rejected():
+    # The native library does not track serial numbers; the CredentialIssuer
+    # wrapper must reject a request that replays a previously-accepted serial.
+    sk = os.urandom(160)
+    issuer = CredentialIssuer(sk, MAX_AMOUNT)
+    client = Client(issuer.iparams, MAX_AMOUNT)
+
+    zero_req, zero_val = client.create_zero_request()
+    creds = client.handle_response(issuer.handle_zero(zero_req), zero_val)
+
+    # Spend the bootstrap credentials once — accepted.
+    req1, _ = client.create_real_request([1000, 0], creds)
+    issuer.handle_real(req1)
+
+    # Presenting the same credentials again replays their serial numbers.
+    req2, _ = client.create_real_request([1000, 0], creds)
+    try:
+        issuer.handle_real(req2)
+    except WabiSabiError as exc:
+        assert exc.code == 8, f"expected SERIAL_REUSED (8), got {exc.code}"
+    else:
+        raise AssertionError("expected SERIAL_REUSED for a replayed presentation")
+
+
 def test_invalid_response_raises():
     sk = os.urandom(160)
     issuer = CredentialIssuer(sk, MAX_AMOUNT)
     client = Client(issuer.iparams, MAX_AMOUNT)
-    _, zero_val = client.create_zero_request()
+    zero_req, zero_val = client.create_zero_request()
+    # Tamper a real response so its proof no longer verifies.
+    resp = bytearray(issuer.handle_zero(zero_req))
+    resp[0] ^= 0xFF
     try:
-        client.handle_response(b"\x00" * 200, zero_val)
+        client.handle_response(bytes(resp), zero_val)
     except (WabiSabiError, ValueError):
         pass
     else:
-        raise AssertionError("expected an error for a garbage response")
+        raise AssertionError("expected an error for a tampered response")
 
 
 def _run_standalone():

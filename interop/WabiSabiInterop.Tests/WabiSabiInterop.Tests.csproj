@@ -3,6 +3,9 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <!-- The vendored WalletWasabi reference classes under Reference/ assume the
+         implicit global usings WalletWasabi builds with (System, System.Linq, ...). -->
+    <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
     <RootNamespace>WabiSabiInterop.Tests</RootNamespace>
@@ -10,6 +13,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk"         Version="17.8.0" />
+    <!-- Matches WalletWasabi's NBitcoin version so the vendored reference
+         OwnershipProof under Reference/ behaves identically to the source of truth. -->
+    <PackageReference Include="NBitcoin"                       Version="10.0.7" />
     <PackageReference Include="xunit"                          Version="2.6.1" />
     <PackageReference Include="xunit.runner.visualstudio"      Version="2.5.3">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

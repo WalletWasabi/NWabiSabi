@@ -6,73 +6,6 @@
 #include "generators.h"
 #include "sha256.h"
 
-/* ---- Serial number hash set ---- */
-
-static uint32_t
-serial_hash(const uint8_t* compressed_ge) {
-    uint32_t h = 0x811c9dc5u;
-    for (int i = 0; i < WABISABI_GE_SIZE; i++) {
-        h ^= compressed_ge[i];
-        h *= 0x01000193u;
-    }
-    return h;
-}
-
-int
-wabisabi_serial_set_contains(const wabisabi_serial_set_t* set, const wabisabi_ge_t* s) {
-    uint8_t key[WABISABI_GE_SIZE];
-    wabisabi_ge_serialize(key, s);
-    uint32_t h = serial_hash(key) % WABISABI_MAX_SERIAL_NUMBERS;
-    for (int i = 0; i < WABISABI_MAX_SERIAL_NUMBERS; i++) {
-        int idx = (h + i) % WABISABI_MAX_SERIAL_NUMBERS;
-        if (!set->used[idx]) {
-            return 0;
-        }
-        if (memcmp(set->entries[idx], key, WABISABI_GE_SIZE) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-int
-wabisabi_serial_set_insert(wabisabi_serial_set_t* set, const wabisabi_ge_t* s) {
-    uint8_t key[WABISABI_GE_SIZE];
-    wabisabi_ge_serialize(key, s);
-    uint32_t h = serial_hash(key) % WABISABI_MAX_SERIAL_NUMBERS;
-    for (int i = 0; i < WABISABI_MAX_SERIAL_NUMBERS; i++) {
-        int idx = (h + i) % WABISABI_MAX_SERIAL_NUMBERS;
-        if (!set->used[idx]) {
-            set->used[idx] = 1;
-            memcpy(set->entries[idx], key, WABISABI_GE_SIZE);
-            set->count++;
-            return 1;
-        }
-        if (memcmp(set->entries[idx], key, WABISABI_GE_SIZE) == 0) {
-            return 0; /* already present */
-        }
-    }
-    return 0; /* full */
-}
-
-void
-wabisabi_serial_set_remove(wabisabi_serial_set_t* set, const wabisabi_ge_t* s) {
-    uint8_t key[WABISABI_GE_SIZE];
-    wabisabi_ge_serialize(key, s);
-    uint32_t h = serial_hash(key) % WABISABI_MAX_SERIAL_NUMBERS;
-    for (int i = 0; i < WABISABI_MAX_SERIAL_NUMBERS; i++) {
-        int idx = (h + i) % WABISABI_MAX_SERIAL_NUMBERS;
-        if (!set->used[idx]) {
-            return;
-        }
-        if (memcmp(set->entries[idx], key, WABISABI_GE_SIZE) == 0) {
-            set->used[idx] = 0;
-            set->count--;
-            return;
-        }
-    }
-}
-
 /* ---- Issuer ---- */
 
 static int
@@ -93,7 +26,6 @@ wabisabi_issuer_state_init(wabisabi_issuer_state_t* issuer, const wabisabi_sk_t*
     issuer->max_amount = max_amount;
     issuer->range_proof_width = ceil_log2(max_amount);
     issuer->balance = 0;
-    memset(&issuer->serial_numbers, 0, sizeof(issuer->serial_numbers));
 }
 
 /* Build transcript for the protocol */
@@ -182,7 +114,12 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
         }
     }
 
-    /* Check for duplicate serial numbers in this request */
+    /* Reject a request that presents the same serial number twice: presenting
+     * one credential more than once in a single request is a double spend. This
+     * check is stateless (it only inspects the request), so it stays in the
+     * library as defense-in-depth for every FFI caller. Cross-request reuse
+     * detection needs a stateful nullifier set and is the caller's
+     * responsibility — see wabisabi_ffi.h. */
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         for (int j = i + 1; j < WABISABI_CREDENTIAL_COUNT; j++) {
             if (wabisabi_ge_equal(&req->presented[i].s, &req->presented[j].s)) {
@@ -191,28 +128,8 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
         }
     }
 
-    /* Check against previously used serial numbers */
-    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        if (wabisabi_serial_set_contains(&issuer->serial_numbers, &req->presented[i].s)) {
-            return WABISABI_ERR_SERIAL_REUSED;
-        }
-    }
-
-    /* Tentatively add serial numbers; roll back and fail if set is full */
-    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        if (!wabisabi_serial_set_insert(&issuer->serial_numbers, &req->presented[i].s)) {
-            for (int j = 0; j < i; j++) {
-                wabisabi_serial_set_remove(&issuer->serial_numbers, &req->presented[j].s);
-            }
-            return WABISABI_ERR_SERIAL_SET_FULL;
-        }
-    }
-
     /* Balance check: balance + delta must not go negative */
     if (issuer->balance + req->delta < 0) {
-        for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-            wabisabi_serial_set_remove(&issuer->serial_numbers, &req->presented[i].s);
-        }
         return WABISABI_ERR_NEGATIVE_BALANCE;
     }
 
@@ -276,10 +193,6 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
     int ok = wabisabi_verify(&transcript, statements, n_stmt, req->proofs, req->n_proofs);
 
     if (!ok) {
-        /* Remove tentatively added serial numbers */
-        for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-            wabisabi_serial_set_remove(&issuer->serial_numbers, &req->presented[i].s);
-        }
         free(statements);
         return WABISABI_ERR_INVALID_PROOF;
     }

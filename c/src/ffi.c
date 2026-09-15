@@ -301,49 +301,35 @@ read_validation_state(const uint8_t* buf, wabisabi_response_validation_t* val) {
 
 /* ---- Mutable issuer state serialization ----
  *
- * Format (variable length):
- *   [balance:8 LE][count:4 LE][serial_0:GE_SIZE]...[serial_n-1:GE_SIZE]
+ * Format (WABISABI_ISSUER_MSTATE_MAX_SIZE = 8 bytes):
+ *   [balance:8 LE]
  *
- * Returns number of bytes written: 12 + count * WABISABI_GE_SIZE.
+ * Serial-number tracking is the caller's responsibility (see wabisabi_ffi.h),
+ * so the only mutable state carried across calls is the running balance. Its
+ * serialized size is the compile-time constant WABISABI_ISSUER_MSTATE_MAX_SIZE.
  */
-/* Serialized size of the mutable issuer state, in bytes (mirrors write_mutable_state). */
-static int
-mutable_state_serialized_size(const wabisabi_issuer_state_t* issuer) {
-    return 12 + issuer->serial_numbers.count * WABISABI_GE_SIZE;
-}
-
 static int
 write_mutable_state(uint8_t* buf, const wabisabi_issuer_state_t* issuer) {
     int64_t b = issuer->balance;
     for (int i = 0; i < 8; i++) {
         buf[i] = (uint8_t)(b >> (8 * i));
     }
-    int count = issuer->serial_numbers.count;
-    for (int i = 0; i < 4; i++) {
-        buf[8 + i] = (uint8_t)(count >> (8 * i));
-    }
-    int off = 12;
-    for (int i = 0; i < WABISABI_MAX_SERIAL_NUMBERS; i++) {
-        if (issuer->serial_numbers.used[i]) {
-            memcpy(buf + off, issuer->serial_numbers.entries[i], WABISABI_GE_SIZE);
-            off += WABISABI_GE_SIZE;
-        }
-    }
-    return off; /* 12 + count * WABISABI_GE_SIZE */
+    return 8;
 }
 
 /* Returns 0 on success, -1 on error.
- * NULL/empty mstate_in is treated as initial state (balance=0, no serials). */
+ * NULL/empty mstate_in is treated as initial state (balance=0). A non-empty
+ * blob must be exactly WABISABI_ISSUER_MSTATE_MAX_SIZE bytes: rejecting other
+ * lengths surfaces a stale/old-format blob (e.g. one that still carried a
+ * serial set) loudly instead of silently reading only its balance prefix. */
 static int
 read_mutable_state(const uint8_t* mstate_in, int mstate_in_len, wabisabi_issuer_state_t* issuer) {
-    /* Always start with clean slate */
     issuer->balance = 0;
-    memset(&issuer->serial_numbers, 0, sizeof(issuer->serial_numbers));
 
     if (mstate_in == NULL || mstate_in_len == 0) {
         return 0;
     }
-    if (mstate_in_len < 12) {
+    if (mstate_in_len != WABISABI_ISSUER_MSTATE_MAX_SIZE) {
         return -1;
     }
 
@@ -352,29 +338,6 @@ read_mutable_state(const uint8_t* mstate_in, int mstate_in_len, wabisabi_issuer_
         b |= ((int64_t)mstate_in[i]) << (8 * i);
     }
     issuer->balance = b;
-
-    int count = (int)((uint32_t)mstate_in[8]
-                    | ((uint32_t)mstate_in[9]  << 8)
-                    | ((uint32_t)mstate_in[10] << 16)
-                    | ((uint32_t)mstate_in[11] << 24));
-
-    if (count < 0 || count > WABISABI_MAX_SERIAL_NUMBERS) {
-        return -1;
-    }
-    if (mstate_in_len < 12 + count * WABISABI_GE_SIZE) {
-        return -1;
-    }
-
-    for (int i = 0; i < count; i++) {
-        wabisabi_ge_t ge;
-        const uint8_t* entry = mstate_in + 12 + i * WABISABI_GE_SIZE;
-        if (read_ge(entry, &ge) < 0) {
-            return -1;
-        }
-        if (!wabisabi_serial_set_insert(&issuer->serial_numbers, &ge)) {
-            return -1; /* hash table full */
-        }
-    }
     return 0;
 }
 
@@ -447,10 +410,13 @@ wabisabi_issuer_handle_zero(const uint8_t* sk_bytes, int64_t max_amount,
         return WABISABI_ERR_INVALID_LENGTH;
     }
 
+    /* The issuer state no longer embeds the serial-number set, so it fits on
+     * the stack (no heap allocation / free needed). */
+    wabisabi_issuer_state_t issuer;
+
     wabisabi_sk_t sk;
     parse_sk(sk_bytes, &sk);
 
-    wabisabi_issuer_state_t issuer;
     wabisabi_issuer_state_init(&issuer, &sk, max_amount);
     secure_zero(&sk, sizeof(sk));
 
@@ -482,7 +448,7 @@ wabisabi_issuer_handle_zero(const uint8_t* sk_bytes, int64_t max_amount,
         resp_needed += proof_serialized_size(&resp.proofs[i]);
     }
     if (resp_out_cap < resp_needed
-        || mstate_out_cap < mutable_state_serialized_size(&issuer)) {
+        || mstate_out_cap < WABISABI_ISSUER_MSTATE_MAX_SIZE) {
         return WABISABI_ERR_BUFFER_TOO_SMALL;
     }
 
@@ -520,7 +486,6 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
         || !mstate_out || !mstate_out_len) {
         return WABISABI_ERR_NULL_PTR;
     }
-
     /* delta + presentations + n_requested byte + n_proofs byte (a
      * presentation-only request carries no issuance requests). */
     int min_len = WABISABI_VALUE_SIZE + WABISABI_CREDENTIAL_COUNT * WABISABI_PRESENTATION_SIZE + 1 + 1;
@@ -528,10 +493,12 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
         return WABISABI_ERR_INVALID_LENGTH;
     }
 
+    /* Fits on the stack — see wabisabi_issuer_handle_zero. */
+    wabisabi_issuer_state_t issuer;
+
     wabisabi_sk_t sk;
     parse_sk(sk_bytes, &sk);
 
-    wabisabi_issuer_state_t issuer;
     wabisabi_issuer_state_init(&issuer, &sk, max_amount);
     secure_zero(&sk, sizeof(sk));
 
@@ -602,7 +569,7 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
         resp_needed += proof_serialized_size(&resp.proofs[i]);
     }
     if (resp_out_cap < resp_needed
-        || mstate_out_cap < mutable_state_serialized_size(&issuer)) {
+        || mstate_out_cap < WABISABI_ISSUER_MSTATE_MAX_SIZE) {
         return WABISABI_ERR_BUFFER_TOO_SMALL;
     }
 
