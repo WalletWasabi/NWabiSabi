@@ -5,6 +5,7 @@
  * public contract and include/wabisabi_ffi.h for the shared error enum.
  */
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include "../include/ownership_ffi.h"
 #include "ownership_proof.h"
@@ -89,21 +90,30 @@ wabisabi_ownership_proof_generate(
         return map_op_error(derr);
     }
 
+    /* ownership_proof_t is ~140 KB (MAX_WITNESS_ITEMS × MAX_WITNESS_ITEM_LENGTH),
+     * far too large for the stack of an FFI entry point that may run on a small
+     * (~1 MB) thread-pool stack — heap-allocate it. */
+    ownership_proof_t* proof = malloc(sizeof(*proof));
+    if (!proof) {
+        return WABISABI_ERR_ALLOC;
+    }
+
     /* ownership_id_t is a 32-byte struct with no padding, so the flat
      * n_identifiers * OWNERSHIP_ID_LENGTH buffer is layout-compatible. */
-    ownership_proof_t proof;
     op_error_t oerr = ownership_proof_generate(
         privkey, &spk,
         (const ownership_id_t*)identifiers, (size_t)n_identifiers,
         commitment, (size_t)commitment_len,
         user_confirmation != 0,
-        &proof);
+        proof);
     if (oerr != OP_SUCCESS) {
+        free(proof);
         return map_op_error(oerr);
     }
 
     size_t written = (size_t)(out_cap < 0 ? 0 : out_cap);
-    oerr = ownership_proof_serialize(&proof, out, &written);
+    oerr = ownership_proof_serialize(proof, out, &written);
+    free(proof);
     if (oerr != OP_SUCCESS) {
         return map_op_error(oerr);
     }
@@ -131,15 +141,22 @@ wabisabi_ownership_proof_verify(
         return serr;
     }
 
-    ownership_proof_t proof;
-    op_error_t oerr = ownership_proof_deserialize(proof_bytes, (size_t)proof_len, &proof);
+    /* ~140 KB — heap-allocate (see wabisabi_ownership_proof_generate). */
+    ownership_proof_t* proof = malloc(sizeof(*proof));
+    if (!proof) {
+        return WABISABI_ERR_ALLOC;
+    }
+
+    op_error_t oerr = ownership_proof_deserialize(proof_bytes, (size_t)proof_len, proof);
     if (oerr != OP_SUCCESS) {
+        free(proof);
         return map_op_error(oerr);
     }
 
     oerr = ownership_proof_verify(
-        &proof, &spk,
+        proof, &spk,
         commitment, (size_t)commitment_len,
         require_user_confirmation != 0);
+    free(proof);
     return map_op_error(oerr);
 }

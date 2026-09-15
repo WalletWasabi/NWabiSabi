@@ -215,7 +215,10 @@ test_zero_proof(void) {
     wabisabi_ge_t ma;
     wabisabi_ge_mul(&ma, &r, &WABISABI_Gh);
 
-    wabisabi_knowledge_t kn = wabisabi_zero_proof_knowledge(&ma, &r);
+    /* knowledge/statement are ~600 KB each — heap-allocate (see the note in
+     * tests/test_stack.c); real callers never put these on the stack. */
+    wabisabi_knowledge_t* kn = malloc(sizeof(*kn));
+    wabisabi_zero_proof_knowledge_into(kn, &ma, &r);
 
     uint8_t rnd[32];
     next_random(rnd);
@@ -225,12 +228,15 @@ test_zero_proof(void) {
     wabisabi_transcript_clone(&t2, &t1);
 
     wabisabi_proof_t proof;
-    wabisabi_prove(&proof, &t1, &kn, 1, rnd, 32);
+    wabisabi_prove(&proof, &t1, kn, 1, rnd, 32);
 
-    wabisabi_statement_t stmt = wabisabi_zero_proof_statement(&ma);
-    int ok = wabisabi_verify(&t2, &stmt, 1, &proof, 1);
+    wabisabi_statement_t* stmt = malloc(sizeof(*stmt));
+    wabisabi_zero_proof_statement_into(stmt, &ma);
+    int ok = wabisabi_verify(&t2, stmt, 1, &proof, 1);
     assert(ok);
 
+    free(kn);
+    free(stmt);
     printf("  Zero proof OK\n");
 }
 
@@ -254,7 +260,7 @@ test_full_protocol(void) {
     memcpy(sk.x1.data, rand_bytes[3], 32);
     memcpy(sk.ya.data, rand_bytes[4], 32);
 
-    long max_amount = 1000000;
+    int64_t max_amount = 1000000;
 
     /* Initialize issuer */
     wabisabi_issuer_state_t issuer;
@@ -301,7 +307,7 @@ test_full_protocol(void) {
     /* --- Phase 2: Input registration (request value credentials) --- */
     printf("  Phase 2: Input registration...\n");
 
-    long amounts_to_request[] = {500000, 300000};
+    int64_t amounts_to_request[] = {500000, 300000};
     uint8_t client_rand2[32];
     next_random(client_rand2);
     wabisabi_real_request_t real_req;
@@ -326,18 +332,19 @@ test_full_protocol(void) {
         assert(0);
     }
 
-    long total = 0;
+    int64_t total = 0;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        printf("    Credential[%d]: value=%ld\n", i, new_credentials[i].value);
+        printf("    Credential[%d]: value=%lld\n", i, (long long)new_credentials[i].value);
         total += new_credentials[i].value;
     }
-    printf("  Total value: %ld (expected: 800000)\n", total);
+    printf("  Total value: %lld (expected: 800000)\n", (long long)total);
     assert(total == 800000);
 
     printf("  Full protocol OK\n");
 }
 
 int run_compat_tests(void);
+int run_stack_tests(void);
 
 int
 main(void) {
@@ -360,9 +367,16 @@ main(void) {
 
     int compat_failures = run_compat_tests();
 
+    printf("\n");
+    int stack_failures = run_stack_tests();
+
     wabisabi_ctx_cleanup();
     if (compat_failures > 0) {
         printf("\n=== FAILED: %d compat test(s) failed ===\n", compat_failures);
+        return 1;
+    }
+    if (stack_failures > 0) {
+        printf("\n=== FAILED: %d stack test(s) failed ===\n", stack_failures);
         return 1;
     }
     printf("\n=== All tests passed ===\n");

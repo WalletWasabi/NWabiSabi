@@ -23,7 +23,7 @@
     a WabiSabi.Native type), so pure-managed consumers never touch it.
   -->
   <PropertyGroup>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <PackageId>WabiSabi</PackageId>
     <Authors>WabiSabi Contributors</Authors>
     <projectUrl>https://github.com/zkSNACKs/NWabiSabi</projectUrl>

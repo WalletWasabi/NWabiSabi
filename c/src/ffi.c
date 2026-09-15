@@ -424,48 +424,62 @@ wabisabi_issuer_handle_zero(const uint8_t* sk_bytes, int64_t max_amount,
         return WABISABI_ERR_PARSE;
     }
 
-    wabisabi_zero_request_t req;
+    /* req (~36 KB) and resp (~30 KB) are too large for an FFI entry point that
+     * may run on a small (~1 MB) thread-pool stack; heap-allocate them. */
+    wabisabi_zero_request_t* req = malloc(sizeof(*req));
+    wabisabi_response_t* resp = malloc(sizeof(*resp));
+    wabisabi_error_t ret = WABISABI_OK;
+    if (!req || !resp) {
+        ret = WABISABI_ERR_ALLOC;
+        goto cleanup;
+    }
+
     int off = 0;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        int n = read_issuance_request(req_bytes + off, req_len - off, &req.requested[i], 0);
-        if (n < 0) return WABISABI_ERR_PARSE;
+        int n = read_issuance_request(req_bytes + off, req_len - off, &req->requested[i], 0);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        int n = read_proof(req_bytes + off, req_len - off, &req.proofs[i]);
-        if (n < 0) return WABISABI_ERR_PARSE;
+        int n = read_proof(req_bytes + off, req_len - off, &req->proofs[i]);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
 
-    wabisabi_response_t resp;
-    wabisabi_error_t err = wabisabi_issuer_state_handle_zero(&issuer, &req, &resp, rand_bytes);
-    if (err != WABISABI_OK) {
-        return err;
+    ret = wabisabi_issuer_state_handle_zero(&issuer, req, resp, rand_bytes);
+    if (ret != WABISABI_OK) {
+        goto cleanup;
     }
 
-    int resp_needed = 1 + resp.n_issued * WABISABI_MAC_SIZE;
-    for (int i = 0; i < resp.n_issued; i++) {
-        resp_needed += proof_serialized_size(&resp.proofs[i]);
+    int resp_needed = 1 + resp->n_issued * WABISABI_MAC_SIZE;
+    for (int i = 0; i < resp->n_issued; i++) {
+        resp_needed += proof_serialized_size(&resp->proofs[i]);
     }
     if (resp_out_cap < resp_needed
         || mstate_out_cap < WABISABI_ISSUER_MSTATE_MAX_SIZE) {
-        return WABISABI_ERR_BUFFER_TOO_SMALL;
+        ret = WABISABI_ERR_BUFFER_TOO_SMALL;
+        goto cleanup;
     }
 
     off = 0;
-    resp_out[off++] = (uint8_t)resp.n_issued;
-    for (int i = 0; i < resp.n_issued; i++) {
-        off += write_mac(resp_out + off, &resp.issued[i]);
+    resp_out[off++] = (uint8_t)resp->n_issued;
+    for (int i = 0; i < resp->n_issued; i++) {
+        off += write_mac(resp_out + off, &resp->issued[i]);
     }
-    for (int i = 0; i < resp.n_issued; i++) {
-        int n = write_proof(resp_out + off, &resp.proofs[i]);
-        if (n < 0) return WABISABI_ERR_PARSE;
+    for (int i = 0; i < resp->n_issued; i++) {
+        int n = write_proof(resp_out + off, &resp->proofs[i]);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
     *resp_len_out = off;
 
     *mstate_out_len = write_mutable_state(mstate_out, &issuer);
-    return WABISABI_OK;
+    ret = WABISABI_OK;
+
+cleanup:
+    free(req);
+    free(resp);
+    return ret;
 }
 
 /*
@@ -506,87 +520,104 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
         return WABISABI_ERR_PARSE;
     }
 
-    wabisabi_real_request_t req;
-    int off = 0;
     int w = issuer.range_proof_width;
-
     if (w < 0 || w > WABISABI_MAX_RANGE_WIDTH) {
         return WABISABI_ERR_INVALID_BIT_COMMITMENT;
     }
 
+    /* req (~82 KB) and resp (~30 KB) are too large for an FFI entry point that
+     * may run on a small (~1 MB) thread-pool stack; heap-allocate them. */
+    wabisabi_real_request_t* req = malloc(sizeof(*req));
+    wabisabi_response_t* resp = malloc(sizeof(*resp));
+    wabisabi_error_t ret = WABISABI_OK;
+    if (!req || !resp) {
+        ret = WABISABI_ERR_ALLOC;
+        goto cleanup;
+    }
+
+    int off = 0;
     {
         uint64_t uv = 0;
         for (int i = 0; i < WABISABI_VALUE_SIZE; i++) {
             uv |= ((uint64_t)req_bytes[off + i]) << (8 * i);
         }
-        req.delta = (int64_t)uv;
+        req->delta = (int64_t)uv;
         off += WABISABI_VALUE_SIZE;
     }
 
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        int n = read_presentation(req_bytes + off, req_len - off, &req.presented[i]);
-        if (n < 0) return WABISABI_ERR_PARSE;
+        int n = read_presentation(req_bytes + off, req_len - off, &req->presented[i]);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
 
     if (off >= req_len) {
-        return WABISABI_ERR_INVALID_LENGTH;
+        ret = WABISABI_ERR_INVALID_LENGTH;
+        goto cleanup;
     }
-    req.n_requested = req_bytes[off++];
-    if (req.n_requested != 0 && req.n_requested != WABISABI_CREDENTIAL_COUNT) {
-        return WABISABI_ERR_INVALID_CRED_COUNT;
+    req->n_requested = req_bytes[off++];
+    if (req->n_requested != 0 && req->n_requested != WABISABI_CREDENTIAL_COUNT) {
+        ret = WABISABI_ERR_INVALID_CRED_COUNT;
+        goto cleanup;
     }
 
-    for (int i = 0; i < req.n_requested; i++) {
-        int n = read_issuance_request(req_bytes + off, req_len - off, &req.requested[i], w);
-        if (n < 0) return WABISABI_ERR_PARSE;
+    for (int i = 0; i < req->n_requested; i++) {
+        int n = read_issuance_request(req_bytes + off, req_len - off, &req->requested[i], w);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
 
     if (off >= req_len) {
-        return WABISABI_ERR_INVALID_LENGTH;
+        ret = WABISABI_ERR_INVALID_LENGTH;
+        goto cleanup;
     }
-    req.n_proofs = req_bytes[off++];
+    req->n_proofs = req_bytes[off++];
     int max_proofs = WABISABI_CREDENTIAL_COUNT * 2 + 1;
-    if (req.n_proofs > max_proofs) {
-        return WABISABI_ERR_INVALID_CRED_COUNT;
+    if (req->n_proofs > max_proofs) {
+        ret = WABISABI_ERR_INVALID_CRED_COUNT;
+        goto cleanup;
     }
 
-    for (int i = 0; i < req.n_proofs; i++) {
-        int n = read_proof(req_bytes + off, req_len - off, &req.proofs[i]);
-        if (n < 0) return WABISABI_ERR_PARSE;
+    for (int i = 0; i < req->n_proofs; i++) {
+        int n = read_proof(req_bytes + off, req_len - off, &req->proofs[i]);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
 
-    wabisabi_response_t resp;
-    wabisabi_error_t err = wabisabi_issuer_state_handle_real(&issuer, &req, &resp, rand_bytes);
-    if (err != WABISABI_OK) {
-        return err;
+    ret = wabisabi_issuer_state_handle_real(&issuer, req, resp, rand_bytes);
+    if (ret != WABISABI_OK) {
+        goto cleanup;
     }
 
-    int resp_needed = 1 + resp.n_issued * WABISABI_MAC_SIZE;
-    for (int i = 0; i < resp.n_issued; i++) {
-        resp_needed += proof_serialized_size(&resp.proofs[i]);
+    int resp_needed = 1 + resp->n_issued * WABISABI_MAC_SIZE;
+    for (int i = 0; i < resp->n_issued; i++) {
+        resp_needed += proof_serialized_size(&resp->proofs[i]);
     }
     if (resp_out_cap < resp_needed
         || mstate_out_cap < WABISABI_ISSUER_MSTATE_MAX_SIZE) {
-        return WABISABI_ERR_BUFFER_TOO_SMALL;
+        ret = WABISABI_ERR_BUFFER_TOO_SMALL;
+        goto cleanup;
     }
 
     off = 0;
-    resp_out[off++] = (uint8_t)resp.n_issued;
-    for (int i = 0; i < resp.n_issued; i++) {
-        off += write_mac(resp_out + off, &resp.issued[i]);
+    resp_out[off++] = (uint8_t)resp->n_issued;
+    for (int i = 0; i < resp->n_issued; i++) {
+        off += write_mac(resp_out + off, &resp->issued[i]);
     }
-    for (int i = 0; i < resp.n_issued; i++) {
-        int n = write_proof(resp_out + off, &resp.proofs[i]);
-        if (n < 0) return WABISABI_ERR_PARSE;
+    for (int i = 0; i < resp->n_issued; i++) {
+        int n = write_proof(resp_out + off, &resp->proofs[i]);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
     *resp_len_out = off;
 
     *mstate_out_len = write_mutable_state(mstate_out, &issuer);
-    return WABISABI_OK;
+    ret = WABISABI_OK;
+
+cleanup:
+    free(req);
+    free(resp);
+    return ret;
 }
 
 /* ---- Client (stateless) ---- */
@@ -609,31 +640,43 @@ wabisabi_client_create_zero_request(const uint8_t* rand_bytes,
     wabisabi_client_state_t client;
     wabisabi_client_state_init(&client, &dummy_iparams, 1 /* dummy max_amount */);
 
-    wabisabi_zero_request_t req;
+    /* req (~36 KB) is too large for an FFI entry point that may run on a small
+     * (~1 MB) thread-pool stack; heap-allocate it. */
+    wabisabi_zero_request_t* req = malloc(sizeof(*req));
     wabisabi_response_validation_t val;
-    wabisabi_client_state_create_zero_request(&client, rand_bytes, &req, &val);
+    wabisabi_error_t ret = WABISABI_OK;
+    if (!req) {
+        ret = WABISABI_ERR_ALLOC;
+        goto cleanup;
+    }
+    wabisabi_client_state_create_zero_request(&client, rand_bytes, req, &val);
 
     int req_needed = WABISABI_CREDENTIAL_COUNT * WABISABI_GE_SIZE;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        req_needed += proof_serialized_size(&req.proofs[i]);
+        req_needed += proof_serialized_size(&req->proofs[i]);
     }
     if (req_out_cap < req_needed) {
-        return WABISABI_ERR_BUFFER_TOO_SMALL;
+        ret = WABISABI_ERR_BUFFER_TOO_SMALL;
+        goto cleanup;
     }
 
     int off = 0;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        off += write_ge(req_out + off, &req.requested[i].ma);
+        off += write_ge(req_out + off, &req->requested[i].ma);
     }
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        int n = write_proof(req_out + off, &req.proofs[i]);
-        if (n < 0) return WABISABI_ERR_PARSE;
+        int n = write_proof(req_out + off, &req->proofs[i]);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
     *req_len_out = off;
 
     write_validation_state(val_out, &val);
-    return WABISABI_OK;
+    ret = WABISABI_OK;
+
+cleanup:
+    free(req);
+    return ret;
 }
 
 /*
@@ -675,52 +718,65 @@ wabisabi_client_create_real_request(const uint8_t* iparams_bytes, int64_t max_am
         }
     }
 
-    wabisabi_real_request_t req;
+    /* req (~82 KB) is too large for an FFI entry point that may run on a small
+     * (~1 MB) thread-pool stack; heap-allocate it. */
+    wabisabi_real_request_t* req = malloc(sizeof(*req));
     wabisabi_response_validation_t val;
+    wabisabi_error_t ret = WABISABI_OK;
+    if (!req) {
+        secure_zero(creds, sizeof(creds));
+        ret = WABISABI_ERR_ALLOC;
+        goto cleanup;
+    }
     wabisabi_client_state_create_real_request(&client, amounts, n_amounts, creds, n_creds,
-                                              rand_bytes, &req, &val);
+                                              rand_bytes, req, &val);
     secure_zero(creds, sizeof(creds));
 
     int req_needed = WABISABI_VALUE_SIZE
                    + WABISABI_CREDENTIAL_COUNT * WABISABI_PRESENTATION_SIZE
                    + 1  /* n_requested byte */
                    + 1; /* n_proofs byte */
-    for (int i = 0; i < req.n_requested; i++) {
-        req_needed += issuance_request_serialized_size(&req.requested[i]);
+    for (int i = 0; i < req->n_requested; i++) {
+        req_needed += issuance_request_serialized_size(&req->requested[i]);
     }
-    for (int i = 0; i < req.n_proofs; i++) {
-        req_needed += proof_serialized_size(&req.proofs[i]);
+    for (int i = 0; i < req->n_proofs; i++) {
+        req_needed += proof_serialized_size(&req->proofs[i]);
     }
     if (req_out_cap < req_needed) {
-        return WABISABI_ERR_BUFFER_TOO_SMALL;
+        ret = WABISABI_ERR_BUFFER_TOO_SMALL;
+        goto cleanup;
     }
 
     int off = 0;
 
-    int64_t delta = req.delta;
+    int64_t delta = req->delta;
     for (int i = 0; i < WABISABI_VALUE_SIZE; i++) {
         req_out[off++] = (uint8_t)(delta >> (8 * i));
     }
 
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        off += write_presentation(req_out + off, &req.presented[i]);
+        off += write_presentation(req_out + off, &req->presented[i]);
     }
 
-    req_out[off++] = (uint8_t)req.n_requested;
-    for (int i = 0; i < req.n_requested; i++) {
-        off += write_issuance_request(req_out + off, &req.requested[i]);
+    req_out[off++] = (uint8_t)req->n_requested;
+    for (int i = 0; i < req->n_requested; i++) {
+        off += write_issuance_request(req_out + off, &req->requested[i]);
     }
 
-    req_out[off++] = (uint8_t)req.n_proofs;
-    for (int i = 0; i < req.n_proofs; i++) {
-        int n = write_proof(req_out + off, &req.proofs[i]);
-        if (n < 0) return WABISABI_ERR_PARSE;
+    req_out[off++] = (uint8_t)req->n_proofs;
+    for (int i = 0; i < req->n_proofs; i++) {
+        int n = write_proof(req_out + off, &req->proofs[i]);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
     *req_len_out = off;
 
     write_validation_state(val_out, &val);
-    return WABISABI_OK;
+    ret = WABISABI_OK;
+
+cleanup:
+    free(req);
+    return ret;
 }
 
 /*
@@ -758,38 +814,49 @@ wabisabi_client_handle_response(const uint8_t* iparams_bytes,
         return WABISABI_ERR_PARSE;
     }
 
-    wabisabi_response_t resp;
+    /* resp (~30 KB) is too large for an FFI entry point that may run on a small
+     * (~1 MB) thread-pool stack; heap-allocate it. */
+    wabisabi_response_t* resp = malloc(sizeof(*resp));
+    wabisabi_error_t ret = WABISABI_OK;
+    if (!resp) {
+        ret = WABISABI_ERR_ALLOC;
+        goto cleanup;
+    }
+
     int off = 0;
-    resp.n_issued = resp_bytes[off++];
-    if (resp.n_issued != 0 && resp.n_issued != WABISABI_CREDENTIAL_COUNT) {
-        return WABISABI_ERR_INVALID_CRED_COUNT;
+    resp->n_issued = resp_bytes[off++];
+    if (resp->n_issued != 0 && resp->n_issued != WABISABI_CREDENTIAL_COUNT) {
+        ret = WABISABI_ERR_INVALID_CRED_COUNT;
+        goto cleanup;
     }
-    if (creds_out_cap < resp.n_issued * WABISABI_CREDENTIAL_SIZE) {
-        return WABISABI_ERR_BUFFER_TOO_SMALL;
+    if (creds_out_cap < resp->n_issued * WABISABI_CREDENTIAL_SIZE) {
+        ret = WABISABI_ERR_BUFFER_TOO_SMALL;
+        goto cleanup;
     }
-    for (int i = 0; i < resp.n_issued; i++) {
-        int n = read_mac(resp_bytes + off, resp_len - off, &resp.issued[i]);
-        if (n < 0) return WABISABI_ERR_PARSE;
+    for (int i = 0; i < resp->n_issued; i++) {
+        int n = read_mac(resp_bytes + off, resp_len - off, &resp->issued[i]);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
-    for (int i = 0; i < resp.n_issued; i++) {
-        int n = read_proof(resp_bytes + off, resp_len - off, &resp.proofs[i]);
-        if (n < 0) return WABISABI_ERR_PARSE;
+    for (int i = 0; i < resp->n_issued; i++) {
+        int n = read_proof(resp_bytes + off, resp_len - off, &resp->proofs[i]);
+        if (n < 0) { ret = WABISABI_ERR_PARSE; goto cleanup; }
         off += n;
     }
 
-    wabisabi_credential_t creds[WABISABI_CREDENTIAL_COUNT];
-    wabisabi_error_t err = wabisabi_client_state_handle_response(&client, &resp, &val, creds);
-    if (err != WABISABI_OK) {
+    {
+        wabisabi_credential_t creds[WABISABI_CREDENTIAL_COUNT];
+        ret = wabisabi_client_state_handle_response(&client, resp, &val, creds);
+        if (ret == WABISABI_OK) {
+            for (int i = 0; i < resp->n_issued; i++) {
+                write_credential(creds_out + i * WABISABI_CREDENTIAL_SIZE, &creds[i]);
+            }
+            *n_creds_out = resp->n_issued;
+        }
         secure_zero(creds, sizeof(creds));
-        return err;
     }
 
-    for (int i = 0; i < resp.n_issued; i++) {
-        write_credential(creds_out + i * WABISABI_CREDENTIAL_SIZE, &creds[i]);
-    }
-
-    secure_zero(creds, sizeof(creds));
-    *n_creds_out = resp.n_issued;
-    return WABISABI_OK;
+cleanup:
+    free(resp);
+    return ret;
 }

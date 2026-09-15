@@ -59,7 +59,7 @@ wabisabi_issuer_state_handle_zero(wabisabi_issuer_state_t* issuer, const wabisab
     /* Build statements: zero proofs for each requested credential */
     wabisabi_statement_t* statements = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_statement_t));
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        statements[i] = wabisabi_zero_proof_statement(&req->requested[i].ma);
+        wabisabi_zero_proof_statement_into(&statements[i], &req->requested[i].ma);
     }
 
     wabisabi_transcript_t transcript;
@@ -141,13 +141,13 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         wabisabi_ge_t z;
         wabisabi_compute_z(&z, &req->presented[i], &issuer->sk);
-        statements[n_stmt++] = wabisabi_show_credential_statement(&req->presented[i], &z, &issuer->iparams);
+        wabisabi_show_credential_statement_into(&statements[n_stmt++], &req->presented[i], &z, &issuer->iparams);
     }
 
     /* Range proofs (none for a presentation-only request) */
     for (int i = 0; i < req->n_requested; i++) {
-        statements[n_stmt++] = wabisabi_range_proof_statement(&req->requested[i].ma, req->requested[i].bit_commitments,
-                                                              issuer->range_proof_width);
+        wabisabi_range_proof_statement_into(&statements[n_stmt++], &req->requested[i].ma,
+                                            req->requested[i].bit_commitments, issuer->range_proof_width);
     }
 
     /* Balance proof */
@@ -184,7 +184,7 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
         wabisabi_ge_add(&bc, &balance_tweak, &sum_ca);
         wabisabi_ge_sub(&bc, &bc, &sum_ma);
 
-        statements[n_stmt++] = wabisabi_balance_proof_statement(&bc);
+        wabisabi_balance_proof_statement_into(&statements[n_stmt++], &bc);
     }
 
     wabisabi_transcript_t transcript;
