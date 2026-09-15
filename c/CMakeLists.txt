@@ -98,7 +98,12 @@ target_compile_options(wabisabi PRIVATE
 )
 
 # Test executable
-add_executable(wabisabi_test tests/test_main.c tests/test_compat.c)
+add_executable(wabisabi_test tests/test_main.c tests/test_compat.c tests/test_stack.c)
 target_include_directories(wabisabi_test PRIVATE include src
     ${secp256k1_SOURCE_DIR}/include)
-target_link_libraries(wabisabi_test PRIVATE wabisabi secp256k1)
+
+# The stack-overflow regression test runs the FFI on a thread with a capped
+# stack; link the platform threading library (pthreads on POSIX; Win32 threads
+# are always available).
+find_package(Threads REQUIRED)
+target_link_libraries(wabisabi_test PRIVATE wabisabi secp256k1 Threads::Threads)

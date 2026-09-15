@@ -1,0 +1,70 @@
+name: C tests
+
+# Builds and runs the native C test suite (c/build/wabisabi_test) — the 127
+# ported crypto tests, the integration round-trip, and the stack-overflow
+# regression test (tests/test_stack.c, which runs the FFI on a 512 KiB stack).
+# Uses the same toolchains the shipped package is built with: gcc on Linux,
+# clang on macOS, mingw-w64 gcc on Windows (the project is not MSVC-buildable).
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  unix:
+    name: "C tests ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]   # linux-x64, osx-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Install cmake"
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y cmake
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew list cmake >/dev/null 2>&1 || brew install cmake
+          fi
+
+      - name: "Configure & build"
+        run: |
+          cmake -B c/build -S c -DCMAKE_BUILD_TYPE=Release
+          cmake --build c/build --config Release --target wabisabi_test
+
+      - name: "Run C tests (incl. stack-overflow regression)"
+        run: ./c/build/wabisabi_test
+
+  windows:
+    name: "C tests windows-latest (mingw)"   # win-x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            git
+
+      - name: "Configure & build"
+        run: |
+          cmake -B c/build -S c -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build c/build --target wabisabi_test
+
+      - name: "Run C tests (incl. stack-overflow regression)"
+        # The shared libwabisabi.dll is emitted next to the test exe, so the
+        # loader finds it without extra PATH juggling.
+        run: ./c/build/wabisabi_test.exe

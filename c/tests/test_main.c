@@ -338,6 +338,7 @@ test_full_protocol(void) {
 }
 
 int run_compat_tests(void);
+int run_stack_tests(void);
 
 int
 main(void) {
@@ -360,9 +361,16 @@ main(void) {
 
     int compat_failures = run_compat_tests();
 
+    printf("\n");
+    int stack_failures = run_stack_tests();
+
     wabisabi_ctx_cleanup();
     if (compat_failures > 0) {
         printf("\n=== FAILED: %d compat test(s) failed ===\n", compat_failures);
+        return 1;
+    }
+    if (stack_failures > 0) {
+        printf("\n=== FAILED: %d stack test(s) failed ===\n", stack_failures);
         return 1;
     }
     printf("\n=== All tests passed ===\n");
