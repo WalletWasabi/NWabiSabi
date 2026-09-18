@@ -59,6 +59,13 @@ add_library(wabisabi SHARED
     src/ffi.c
 )
 
+# Force the "lib" prefix on every platform. On Unix CMake adds it by default
+# (libwabisabi.so / libwabisabi.dylib), but MSVC/Windows would emit "wabisabi.dll"
+# with no prefix — which collides case-insensitively with the managed WabiSabi.dll
+# in the NuGet package. Keeping the prefix everywhere gives libwabisabi.dll and
+# matches the DllImport name ("libwabisabi") used by the P/Invoke bindings.
+set_target_properties(wabisabi PROPERTIES PREFIX "lib")
+
 target_include_directories(wabisabi
     PUBLIC  include
     PRIVATE src

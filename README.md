@@ -89,7 +89,7 @@ var valueCreds = client.HandleResponse(realResp, realData.CredentialsResponseVal
 
 ## The native library — `WabiSabi.Native`
 
-A C shared library (`libwabisabi.so` / `wabisabi.dll` / `libwabisabi.dylib`) that implements the same protocol in C, plus thin C# P/Invoke wrappers that expose an identical API to the managed library. This lets you swap `WabiSabi.Native` in for `WabiSabi` without changing any calling code.
+A C shared library (`libwabisabi.so` / `libwabisabi.dll` / `libwabisabi.dylib`) that implements the same protocol in C, plus thin C# P/Invoke wrappers that expose an identical API to the managed library. This lets you swap `WabiSabi.Native` in for `WabiSabi` without changing any calling code.
 
 The C library is **stateless**: all mutable state (issuer serial-number set, balance) is serialized to a byte array and passed back in on each call, making it straightforward to embed in any language.
 
@@ -104,7 +104,7 @@ cmake -B c/build -S c \
 cmake --build c/build
 ```
 
-The shared library is written to `c/build/libwabisabi.so` (Linux), `c/build/wabisabi.dll` (Windows), or `c/build/libwabisabi.dylib` (macOS).
+The shared library is written to `c/build/libwabisabi.so` (Linux), `c/build/libwabisabi.dll` (Windows), or `c/build/libwabisabi.dylib` (macOS).
 
 ### Build and test the C# wrappers
 
