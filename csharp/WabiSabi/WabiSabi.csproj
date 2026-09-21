@@ -23,7 +23,7 @@
     a WabiSabi.Native type), so pure-managed consumers never touch it.
   -->
   <PropertyGroup>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <PackageId>WabiSabi</PackageId>
     <Authors>WabiSabi Contributors</Authors>
     <projectUrl>https://github.com/zkSNACKs/NWabiSabi</projectUrl>
@@ -60,7 +60,7 @@
 
       runtimes/linux-x64/native/libwabisabi.so
       runtimes/linux-arm64/native/libwabisabi.so
-      runtimes/win-x64/native/wabisabi.dll
+      runtimes/win-x64/native/libwabisabi.dll
       runtimes/osx-x64/native/libwabisabi.dylib
       runtimes/osx-arm64/native/libwabisabi.dylib
 
@@ -73,9 +73,9 @@
     <None Include="runtimes/linux-arm64/native/libwabisabi.so"
           Pack="true" PackagePath="runtimes/linux-arm64/native/"
           Condition="Exists('runtimes/linux-arm64/native/libwabisabi.so')" />
-    <None Include="runtimes/win-x64/native/wabisabi.dll"
+    <None Include="runtimes/win-x64/native/libwabisabi.dll"
           Pack="true" PackagePath="runtimes/win-x64/native/"
-          Condition="Exists('runtimes/win-x64/native/wabisabi.dll')" />
+          Condition="Exists('runtimes/win-x64/native/libwabisabi.dll')" />
     <None Include="runtimes/osx-x64/native/libwabisabi.dylib"
           Pack="true" PackagePath="runtimes/osx-x64/native/"
           Condition="Exists('runtimes/osx-x64/native/libwabisabi.dylib')" />
@@ -90,8 +90,8 @@
              Condition="!Exists('runtimes/linux-x64/native/libwabisabi.so')" />
     <Warning Text="linux-arm64 native binary missing: runtimes/linux-arm64/native/libwabisabi.so"
              Condition="!Exists('runtimes/linux-arm64/native/libwabisabi.so')" />
-    <Warning Text="win-x64     native binary missing: runtimes/win-x64/native/wabisabi.dll"
-             Condition="!Exists('runtimes/win-x64/native/wabisabi.dll')" />
+    <Warning Text="win-x64     native binary missing: runtimes/win-x64/native/libwabisabi.dll"
+             Condition="!Exists('runtimes/win-x64/native/libwabisabi.dll')" />
     <Warning Text="osx-x64     native binary missing: runtimes/osx-x64/native/libwabisabi.dylib"
              Condition="!Exists('runtimes/osx-x64/native/libwabisabi.dylib')" />
     <Warning Text="osx-arm64   native binary missing: runtimes/osx-arm64/native/libwabisabi.dylib"

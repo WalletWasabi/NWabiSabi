@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace WabiSabi.Native;
 
 /// <summary>
-/// P/Invoke bindings for the WabiSabi C shared library (libwabisabi.so / wabisabi.dll).
+/// P/Invoke bindings for the WabiSabi C shared library (libwabisabi.so / libwabisabi.dll / libwabisabi.dylib).
 ///
 /// The C library is stateless: all state (mutable issuer state, client validation state)
 /// is serialized to byte arrays and passed explicitly by the caller.
@@ -16,7 +16,7 @@ namespace WabiSabi.Native;
 /// </summary>
 internal static class NativeWabi
 {
-    private const string Lib = "wabisabi";
+    private const string Lib = "libwabisabi";
 
     /// <summary>
     /// Static constructor ensures the native library is initialized before any P/Invoke calls.
