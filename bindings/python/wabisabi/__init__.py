@@ -195,13 +195,13 @@ class CredentialIssuer:
     def _presented_serials(request_bytes: bytes) -> "list[bytes]":
         """Extract the presented serial numbers (S) from a real-request blob.
 
-        RealRequest layout is ``[delta:8][presentation_0]...[presentation_{k-1}]...``
+        RealRequest layout is ``[delta:8][n_presented:1][presentation_0]...[presentation_{k-1}]...``
         where each presentation is ``[Ca][Cx0][Cx1][CV][S]`` of GE_SIZE-byte group
         elements; the serial number S is the last one. Returns ``[]`` if the blob
         is too short to parse (the native call then rejects it and reports why).
         """
         serials: list[bytes] = []
-        off = _native.VALUE_SIZE                # skip the 8-byte delta
+        off = _native.VALUE_SIZE + 1            # skip the 8-byte delta + n_presented byte
         s_off = 4 * _native.GE_SIZE             # S is the 5th group element
         for _ in range(_native.CREDENTIAL_COUNT):
             end = off + _native.PRESENTATION_SIZE

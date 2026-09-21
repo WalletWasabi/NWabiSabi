@@ -19,7 +19,13 @@ language's binding (`bindings/python/`, and more to come).
 
 - **Mirror the FFI exactly.** Function signatures, the `WABISABI_*_SIZE`
   constants, error codes, and the byte layout of each message must match
-  `c/include/wabisabi_ffi.h`. When that header changes, update every binding.
+  `c/include/wabisabi_ffi.h`. When that header changes, update every binding
+  **and run the binding tests** — they are the only thing that catches a binding
+  drifting from the wire format. Bindings are not in the C↔C# interop gate, so a
+  layout change (e.g. the `n_presented` byte added to `RealRequest`) can silently
+  break a binding otherwise. Run `./scripts/test.sh` from the repo root (it runs
+  every suite, bindings included) or at least the affected binding's tests.
+  CI runs the Python suite on every push/PR (`.github/workflows/python-test.yml`).
 - **Keep the public surface small.** Expose the high-level, stateful API
   (issuer / client / credential / error type). Keep the raw FFI, size
   constants, and runtime lifecycle (`init`/`cleanup`) private — the library is

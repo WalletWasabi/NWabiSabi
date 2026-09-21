@@ -264,6 +264,15 @@ wabisabi_client_state_handle_response(wabisabi_client_state_t* c, const wabisabi
     /* A presentation-only request issues no credentials and carries no proofs. */
     int n = response->n_issued;
 
+    /* The coordinator must issue exactly as many credentials as were requested.
+     * Mirrors the managed client's IssuedCredentialNumberMismatch guard, which
+     * rejects a response whose issued-credential count differs from the request
+     * (its client always requests the full CREDENTIAL_COUNT). Guards against a
+     * coordinator silently returning fewer credentials than requested. */
+    if (n != val->n_requested) {
+        return WABISABI_ERR_ISSUED_COUNT_MISMATCH;
+    }
+
     /* Verify issuer parameter proofs */
     wabisabi_statement_t* statements = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_statement_t));
     for (int i = 0; i < n; i++) {

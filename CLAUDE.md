@@ -25,6 +25,10 @@ The two C# namespaces (`WabiSabi` managed + `WabiSabi.Native` P/Invoke) ship in 
 
 ## Build & test (essentials)
 
+**Run all suites with `./scripts/test.sh`** — it builds the native library and runs the C, managed C#, interop, **and Python binding** tests in order. This is the canonical local test command; always use it (or at least include the Python tests) rather than running suites piecemeal, because the Python bindings are the only consumer of the FFI that nothing else in the build catches when the wire format drifts. CI runs the same four suites (`.github/workflows/{c-test,dotnet-test,python-test}.yml`).
+
+The individual commands, if you need to run one suite in isolation:
+
 ```sh
 # Managed C# library + its unit tests
 dotnet build csharp/WabiSabi.sln
@@ -37,6 +41,9 @@ cmake --build c/build
 
 # Interop compatibility tests — the compatibility gate. Needs libwabisabi.so on the loader path.
 LD_LIBRARY_PATH=$PWD/c/build dotnet test interop/WabiSabiInterop.Tests/WabiSabiInterop.Tests.csproj
+
+# Python binding tests — the Python <-> C gate. Needs libwabisabi.so + the package on PYTHONPATH.
+LD_LIBRARY_PATH=$PWD/c/build PYTHONPATH=$PWD/bindings/python python3 -m pytest bindings/python/tests
 ```
 
 Nix is the supported environment: `nix develop` (full C + .NET, sets `LD_LIBRARY_PATH` and `SECP256K1_SOURCE_DIR`), `nix develop .#c`, `nix develop .#dotnet`. See README for `nix build` outputs and the NuGet packing/lockfile workflow.

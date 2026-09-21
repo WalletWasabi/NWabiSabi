@@ -485,7 +485,7 @@ cleanup:
 /*
  * RealRequest wire format:
  *   [delta:VALUE_SIZE LE]
- *   [pres_0:PRESENTATION_SIZE][pres_1:PRESENTATION_SIZE]
+ *   [n_presented:1][pres_0:PRESENTATION_SIZE][pres_1:PRESENTATION_SIZE]
  *   [req_0: GE_SIZE*(1+width)][req_1: GE_SIZE*(1+width)]
  *   [n_proofs:1][proof_0]...[proof_{n-1}]
  */
@@ -500,9 +500,9 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
         || !mstate_out || !mstate_out_len) {
         return WABISABI_ERR_NULL_PTR;
     }
-    /* delta + presentations + n_requested byte + n_proofs byte (a
-     * presentation-only request carries no issuance requests). */
-    int min_len = WABISABI_VALUE_SIZE + WABISABI_CREDENTIAL_COUNT * WABISABI_PRESENTATION_SIZE + 1 + 1;
+    /* delta + n_presented byte + presentations + n_requested byte + n_proofs
+     * byte (a presentation-only request carries no issuance requests). */
+    int min_len = WABISABI_VALUE_SIZE + 1 + WABISABI_CREDENTIAL_COUNT * WABISABI_PRESENTATION_SIZE + 1 + 1;
     if (req_len < min_len) {
         return WABISABI_ERR_INVALID_LENGTH;
     }
@@ -543,6 +543,16 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
         }
         req->delta = (int64_t)uv;
         off += WABISABI_VALUE_SIZE;
+    }
+
+    /* Fail-fast presentation-count guard, mirroring the managed issuer: a real
+     * request must present exactly WABISABI_CREDENTIAL_COUNT credentials.
+     * (min_len above guarantees this byte and the two presentations are present
+     * when the count is correct.) */
+    int n_presented = req_bytes[off++];
+    if (n_presented != WABISABI_CREDENTIAL_COUNT) {
+        ret = WABISABI_ERR_INVALID_PRESENTATION_COUNT;
+        goto cleanup;
     }
 
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
@@ -718,6 +728,20 @@ wabisabi_client_create_real_request(const uint8_t* iparams_bytes, int64_t max_am
         }
     }
 
+    /* Reject presenting the same credential (identical MAC) twice, mirroring the
+     * managed client's CredentialToPresentDuplicated guard. A MAC is (t, V);
+     * randomized presentation would give distinct serial numbers, so the issuer
+     * cannot catch this — it must be rejected here. */
+    for (int i = 0; i < n_creds; i++) {
+        for (int j = i + 1; j < n_creds; j++) {
+            if (memcmp(creds[i].mac.t.data, creds[j].mac.t.data, WABISABI_SCALAR_SIZE) == 0 &&
+                wabisabi_ge_equal(&creds[i].mac.v, &creds[j].mac.v)) {
+                secure_zero(creds, sizeof(creds));
+                return WABISABI_ERR_CREDENTIAL_DUPLICATED;
+            }
+        }
+    }
+
     /* req (~82 KB) is too large for an FFI entry point that may run on a small
      * (~1 MB) thread-pool stack; heap-allocate it. */
     wabisabi_real_request_t* req = malloc(sizeof(*req));
@@ -733,6 +757,7 @@ wabisabi_client_create_real_request(const uint8_t* iparams_bytes, int64_t max_am
     secure_zero(creds, sizeof(creds));
 
     int req_needed = WABISABI_VALUE_SIZE
+                   + 1  /* n_presented byte */
                    + WABISABI_CREDENTIAL_COUNT * WABISABI_PRESENTATION_SIZE
                    + 1  /* n_requested byte */
                    + 1; /* n_proofs byte */
@@ -754,6 +779,7 @@ wabisabi_client_create_real_request(const uint8_t* iparams_bytes, int64_t max_am
         req_out[off++] = (uint8_t)(delta >> (8 * i));
     }
 
+    req_out[off++] = (uint8_t)WABISABI_CREDENTIAL_COUNT;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         off += write_presentation(req_out + off, &req->presented[i]);
     }

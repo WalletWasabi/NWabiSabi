@@ -23,8 +23,8 @@ namespace WabiSabi.Native;
 ///   Presentation : [Ca][Cx0][Cx1][CV][S]          = PRESENTATION_SIZE bytes
 ///   Credential   : [value:VALUE_SIZE LE][randomness:SCALAR_SIZE][mac:MAC_SIZE] = CREDENTIAL_SIZE bytes
 ///   ZeroRequest  : [Ma_0][Ma_1][proof_0][proof_1]
-///   RealRequest  : [delta:VALUE_SIZE LE][pres_0:PRESENTATION_SIZE][pres_1:PRESENTATION_SIZE][n_requested:1][req_0]...[n_proofs:1][proofs...]
-///                  (n_requested is 0 for a presentation-only request, e.g. output registration)
+///   RealRequest  : [delta:VALUE_SIZE LE][n_presented:1][pres_0:PRESENTATION_SIZE]...[n_requested:1][req_0]...[n_proofs:1][proofs...]
+///                  (n_presented must be CREDENTIAL_COUNT; n_requested is 0 for a presentation-only request, e.g. output registration)
 ///   Response     : [n_issued:1][mac_0]...[mac_{n-1}][proof_0]...[proof_{n-1}]
 /// </summary>
 internal static class WireFormat
@@ -146,7 +146,11 @@ internal static class WireFormat
         for (int i = 0; i < NativeWabi.ValueSize; i++)
             bytes.Add((byte)(delta >> (8 * i)));
 
-        foreach (var p in req.Presented)
+        // Explicit presentation count so the C issuer can enforce the
+        // presentation-count guard fail-fast (see wabisabi_ffi.h).
+        var presentedList = req.Presented.ToArray();
+        bytes.Add((byte)presentedList.Length);
+        foreach (var p in presentedList)
         {
             bytes.AddRange(WriteGe(p.Ca));
             bytes.AddRange(WriteGe(p.Cx0));
@@ -186,8 +190,9 @@ internal static class WireFormat
             delta |= ((long)bytes[off + i]) << (8 * i);
         off += NativeWabi.ValueSize;
 
-        var presented = new CredentialPresentation[CredentialCount];
-        for (int i = 0; i < CredentialCount; i++)
+        int nPresented = bytes[off++];
+        var presented = new CredentialPresentation[nPresented];
+        for (int i = 0; i < nPresented; i++)
             presented[i] = new CredentialPresentation(
                 ReadGe(bytes, ref off), ReadGe(bytes, ref off),
                 ReadGe(bytes, ref off), ReadGe(bytes, ref off),

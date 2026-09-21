@@ -86,6 +86,49 @@ def test_double_spend_replay_is_rejected():
         raise AssertionError("expected SERIAL_REUSED for a replayed presentation")
 
 
+def test_duplicate_presented_credential_is_rejected():
+    # Presenting the same credential (identical MAC) twice is rejected up front,
+    # mirroring the managed client's CredentialToPresentDuplicated guard. The
+    # issuer cannot catch this because randomized presentations yield distinct
+    # serial numbers, so the check lives in the request builder.
+    sk = os.urandom(160)
+    issuer = CredentialIssuer(sk, MAX_AMOUNT)
+    client = Client(issuer.iparams, MAX_AMOUNT)
+
+    zero_req, zero_val = client.create_zero_request()
+    creds = client.handle_response(issuer.handle_zero(zero_req), zero_val)
+
+    try:
+        client.create_real_request([0, 0], [creds[0], creds[0]])
+    except WabiSabiError as exc:
+        assert exc.code == 15, f"expected CREDENTIAL_DUPLICATED (15), got {exc.code}"
+    else:
+        raise AssertionError("expected CREDENTIAL_DUPLICATED for a duplicated presentation")
+
+
+def test_issued_count_mismatch_is_rejected():
+    # The coordinator must issue exactly as many credentials as were requested;
+    # a response claiming a different count is rejected, mirroring the managed
+    # client's IssuedCredentialNumberMismatch guard.
+    sk = os.urandom(160)
+    issuer = CredentialIssuer(sk, MAX_AMOUNT)
+    client = Client(issuer.iparams, MAX_AMOUNT)
+
+    zero_req, zero_val = client.create_zero_request()
+    creds = client.handle_response(issuer.handle_zero(zero_req), zero_val)
+
+    real_req, real_val = client.create_real_request([1000, 0], creds)
+    real_resp = bytearray(issuer.handle_real(real_req))
+    real_resp[0] = 0  # claim zero issued credentials for a 2-credential request
+
+    try:
+        client.handle_response(bytes(real_resp), real_val)
+    except WabiSabiError as exc:
+        assert exc.code == 14, f"expected ISSUED_COUNT_MISMATCH (14), got {exc.code}"
+    else:
+        raise AssertionError("expected ISSUED_COUNT_MISMATCH for a wrong issued count")
+
+
 def test_invalid_response_raises():
     sk = os.urandom(160)
     issuer = CredentialIssuer(sk, MAX_AMOUNT)
