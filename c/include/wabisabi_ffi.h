@@ -119,6 +119,14 @@ typedef enum {
     /* A real request presented a number of credentials other than
      * WABISABI_CREDENTIAL_COUNT (fail-fast presentation-count guard). */
     WABISABI_ERR_INVALID_PRESENTATION_COUNT = 13,
+    /* The coordinator's response issued a number of credentials different from
+     * the number the client requested (mirrors the managed client's
+     * IssuedCredentialNumberMismatch guard in HandleResponse). */
+    WABISABI_ERR_ISSUED_COUNT_MISMATCH = 14,
+    /* A real request presented the same credential (identical MAC) more than
+     * once (mirrors the managed client's CredentialToPresentDuplicated guard in
+     * CreateRequest). */
+    WABISABI_ERR_CREDENTIAL_DUPLICATED = 15,
 } wabisabi_error_t;
 
 #ifdef __cplusplus

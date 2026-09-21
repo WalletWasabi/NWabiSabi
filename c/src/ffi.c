@@ -728,6 +728,20 @@ wabisabi_client_create_real_request(const uint8_t* iparams_bytes, int64_t max_am
         }
     }
 
+    /* Reject presenting the same credential (identical MAC) twice, mirroring the
+     * managed client's CredentialToPresentDuplicated guard. A MAC is (t, V);
+     * randomized presentation would give distinct serial numbers, so the issuer
+     * cannot catch this — it must be rejected here. */
+    for (int i = 0; i < n_creds; i++) {
+        for (int j = i + 1; j < n_creds; j++) {
+            if (memcmp(creds[i].mac.t.data, creds[j].mac.t.data, WABISABI_SCALAR_SIZE) == 0 &&
+                wabisabi_ge_equal(&creds[i].mac.v, &creds[j].mac.v)) {
+                secure_zero(creds, sizeof(creds));
+                return WABISABI_ERR_CREDENTIAL_DUPLICATED;
+            }
+        }
+    }
+
     /* req (~82 KB) is too large for an FFI entry point that may run on a small
      * (~1 MB) thread-pool stack; heap-allocate it. */
     wabisabi_real_request_t* req = malloc(sizeof(*req));

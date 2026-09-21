@@ -107,6 +107,16 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
         return WABISABI_ERR_INVALID_CRED_COUNT;
     }
 
+    /* A zero-requested request is presentation-only (output registration) and is
+     * only valid when it removes value from the balance (delta < 0). This
+     * mirrors the managed issuer, which requires the full CREDENTIAL_COUNT of
+     * requested credentials unless IsPresentationOnlyRequest holds
+     * (Delta < 0 && no requested credentials); otherwise it throws
+     * InvalidNumberOfRequestedCredentials. */
+    if (req->n_requested == 0 && req->delta >= 0) {
+        return WABISABI_ERR_INVALID_CRED_COUNT;
+    }
+
     /* Validate bit commitment count */
     for (int i = 0; i < req->n_requested; i++) {
         if (req->requested[i].n_bit_commitments != issuer->range_proof_width) {

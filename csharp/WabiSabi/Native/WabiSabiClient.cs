@@ -117,7 +117,9 @@ public class WabiSabiClient
 
         if (rc != 0)
             throw new WabiSabiCryptoException(
-                WabiSabiCryptoErrorCode.ClientReceivedInvalidProofs,
+                // 15 == WABISABI_ERR_CREDENTIAL_DUPLICATED
+                rc == 15 ? WabiSabiCryptoErrorCode.CredentialToPresentDuplicated
+                         : WabiSabiCryptoErrorCode.ClientReceivedInvalidProofs,
                 $"C client real request failed with error code {rc}.");
 
         var realReq = WireFormat.DeserializeRealRequest(reqOut[..reqLen], RangeProofWidth);
@@ -165,7 +167,9 @@ public class WabiSabiClient
 
         if (rc != 0)
             throw new WabiSabiCryptoException(
-                WabiSabiCryptoErrorCode.ClientReceivedInvalidProofs,
+                // 14 == WABISABI_ERR_ISSUED_COUNT_MISMATCH
+                rc == 14 ? WabiSabiCryptoErrorCode.IssuedCredentialNumberMismatch
+                         : WabiSabiCryptoErrorCode.ClientReceivedInvalidProofs,
                 $"C client response validation failed with error code {rc}.");
 
         return WireFormat.UnpackCredentials(credsOut, nCreds);
