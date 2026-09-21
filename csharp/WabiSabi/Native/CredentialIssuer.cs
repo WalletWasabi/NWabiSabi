@@ -147,6 +147,7 @@ public class CredentialIssuer
         7  => WabiSabiCryptoErrorCode.SerialNumberDuplicated,          // SERIAL_DUPLICATED
         8  => WabiSabiCryptoErrorCode.SerialNumberAlreadyUsed,         // SERIAL_REUSED
         9  => WabiSabiCryptoErrorCode.NegativeBalance,                 // NEGATIVE_BALANCE
+        13 => WabiSabiCryptoErrorCode.InvalidNumberOfPresentedCredentials, // INVALID_PRESENTATION_COUNT
         _  => WabiSabiCryptoErrorCode.CoordinatorReceivedInvalidProofs,
     };
 

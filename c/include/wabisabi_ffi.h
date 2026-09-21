@@ -13,8 +13,12 @@
  *   IParamsBytes : [Cw][I]                      = WABISABI_IPARAMS_SIZE bytes
  *
  *   ZeroRequest  : [Ma_0][Ma_1][proof_0][proof_1]
- *   RealRequest  : [delta:VALUE_SIZE][pres_0:PRESENTATION_SIZE][pres_1:PRESENTATION_SIZE]
+ *   RealRequest  : [delta:VALUE_SIZE][n_presented:1][pres_0:PRESENTATION_SIZE]...[pres_{m-1}]
  *                  [n_requested:1][req_0]...[req_{n-1}][n_proofs:1][proofs...]
+ *                  n_presented must be WABISABI_CREDENTIAL_COUNT for a real
+ *                  request; any other count is rejected fail-fast with
+ *                  WABISABI_ERR_INVALID_PRESENTATION_COUNT (mirroring the
+ *                  managed issuer's presentation-count guard).
  *                  n_requested is 0 for a presentation-only request (output
  *                  registration: presents credentials, requests none) or
  *                  WABISABI_CREDENTIAL_COUNT for a normal request.
@@ -112,6 +116,9 @@ typedef enum {
     WABISABI_ERR_SERIAL_SET_FULL = 10,
     WABISABI_ERR_BUFFER_TOO_SMALL = 11, /* an output buffer capacity is too small for the result */
     WABISABI_ERR_ALLOC = 12, /* heap allocation failed (no longer used by the issuer) */
+    /* A real request presented a number of credentials other than
+     * WABISABI_CREDENTIAL_COUNT (fail-fast presentation-count guard). */
+    WABISABI_ERR_INVALID_PRESENTATION_COUNT = 13,
 } wabisabi_error_t;
 
 #ifdef __cplusplus

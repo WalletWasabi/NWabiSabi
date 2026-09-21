@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using WabiSabi.Crypto;
 using WabiSabi.Crypto.ZeroKnowledge;
+using WabiSabi.CredentialRequesting;
 using WabiSabi.Native;
 using Xunit;
 
@@ -124,6 +125,42 @@ public class SideBySideProtocolTests
         Assert.Equal(WabiSabiCryptoErrorCode.SerialNumberAlreadyUsed, csEx.ErrorCode);
         Assert.Equal(WabiSabiCryptoErrorCode.SerialNumberAlreadyUsed, nativeEx.ErrorCode);
     }
+
+    // -----------------------------------------------------------------------
+    // Presentation-count guard — a real request must present exactly
+    // ProtocolConstants.CredentialNumber (2) credentials. The C# reference
+    // enforces this fail-fast (CredentialIssuer.cs); the native wrapper must
+    // reject it identically. Regression test for NWabiSabi issue #21, where the
+    // native issuer dropped this guard because the FFI RealRequest carried no
+    // presentation count and the C parser read a fixed two from hardcoded offsets.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void WrongPresentationCount_IsRejected_InBothImplementations()
+    {
+        var (cs, native) = MakeProtocolPairs();
+
+        // Bootstrap so we have valid credentials to build a real request from.
+        var csZero     = RunZeroRound(cs.Client, cs.Issuer);
+        var nativeZero = RunZeroRound(native.Client, native.Issuer);
+
+        var csReq     = cs.Client.CreateRequest(TestAmounts, csZero, CancellationToken.None).CredentialsRequest;
+        var nativeReq = native.Client.CreateRequest(TestAmounts, nativeZero, CancellationToken.None).CredentialsRequest;
+
+        // Drop a presentation so the request carries only one (never valid for a
+        // real request), keeping everything else intact.
+        var csBad     = DropOnePresentation(csReq);
+        var nativeBad = DropOnePresentation(nativeReq);
+
+        var csEx     = Assert.Throws<WabiSabiCryptoException>(() => cs.Issuer.HandleRequest(csBad));
+        var nativeEx = Assert.Throws<WabiSabiCryptoException>(() => native.Issuer.HandleRequest(nativeBad));
+
+        Assert.Equal(WabiSabiCryptoErrorCode.InvalidNumberOfPresentedCredentials, csEx.ErrorCode);
+        Assert.Equal(WabiSabiCryptoErrorCode.InvalidNumberOfPresentedCredentials, nativeEx.ErrorCode);
+    }
+
+    private static RealCredentialsRequest DropOnePresentation(RealCredentialsRequest req) =>
+        new(req.Delta, req.Presented.Take(1), req.Requested, req.Proofs);
 
     // -----------------------------------------------------------------------
     // Protocol drivers (identical API on both the reference and native types)
