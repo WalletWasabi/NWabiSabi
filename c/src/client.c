@@ -100,6 +100,12 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
         amounts[i] = amounts_to_request[i];
     }
 
+    /* n_amounts == 0 means a presentation-only request (output registration):
+     * present credentials, request none. It emits no issuance requests and no
+     * range proofs, exactly like the managed client's CreateRequest(creds, ct).
+     * Any non-empty amounts list is a real request for the full padded set. */
+    int n_requested = (n_amounts == 0) ? 0 : WABISABI_CREDENTIAL_COUNT;
+
     wabisabi_knowledge_t* all_knowledge = malloc((WABISABI_CREDENTIAL_COUNT * 2 + 1) * sizeof(wabisabi_knowledge_t));
     int n_knowledge = 0;
 
@@ -135,7 +141,7 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
      * thread-pool stack on Windows/macOS); build it into a heap scratch buffer. */
     int64_t total_requested = 0;
     wabisabi_range_proof_t* rp = malloc(sizeof(*rp));
-    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+    for (int i = 0; i < n_requested; i++) {
         int64_t val = amounts[i];
         total_requested += val;
 
@@ -201,7 +207,7 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
 
         /* r_new = sum of new credential randomness */
         wabisabi_scalar_t r_new = WABISABI_SCALAR_ZERO;
-        for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+        for (int i = 0; i < n_requested; i++) {
             wabisabi_scalar_add(&r_new, &r_new, &out_val->requested[i].randomness);
         }
 
@@ -215,9 +221,7 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
     }
 
     out_req->delta = total_requested - total_presented;
-    /* The C client always requests the full set of credentials (zero-padded);
-     * it does not emit presentation-only requests. */
-    out_req->n_requested = WABISABI_CREDENTIAL_COUNT;
+    out_req->n_requested = n_requested;
     out_req->n_proofs = n_knowledge;
 
     /* Build and advance the prove transcript */
@@ -237,7 +241,7 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
     /* Save post-challenge transcript for issuer param verification */
     wabisabi_transcript_clone(&out_val->transcript, &prove_transcript);
 
-    out_val->n_requested = WABISABI_CREDENTIAL_COUNT;
+    out_val->n_requested = n_requested;
 }
 
 void
