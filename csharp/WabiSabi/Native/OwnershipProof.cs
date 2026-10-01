@@ -87,8 +87,7 @@ public static class OwnershipProof
     /// <param name="scriptPubKey">The coin's scriptPubKey bytes (P2WPKH or P2TR).</param>
     /// <param name="commitmentData">Commitment data the proof was bound to. May be empty.</param>
     /// <param name="requireUserConfirmation">Reject proofs lacking the UserConfirmation flag.</param>
-    /// <returns><c>true</c> if the proof is valid; <c>false</c> if the signature or flags do not verify.</returns>
-    /// <exception cref="ArgumentException">Thrown when the proof is malformed.</exception>
+    /// <returns><c>true</c> if the proof is valid; <c>false</c> if the signature/flags do not verify or the proof is malformed.</returns>
     public static bool Verify(
         byte[] proof,
         byte[] scriptPubKey,
@@ -105,11 +104,19 @@ public static class OwnershipProof
             commitmentData, commitmentData.Length,
             requireUserConfirmation ? 1 : 0);
 
+        // A malformed/oversized proof is simply not a valid proof: return false rather than
+        // throwing, matching the managed reference (Bip322Signature.Verify catches FormatException
+        // and returns false). An untrusted proof arriving on the wire must not become an exception
+        // the caller has to guard — otherwise a coordinator surfaces a generic error instead of a
+        // "wrong ownership proof" rejection. Only genuinely exceptional codes (a null argument the
+        // guards above should have caught, or an allocation failure) are thrown.
         return rc switch
         {
-            0 => true,                                        // WABISABI_OK
-            (int)WabiSabiNativeError.InvalidProof => false,   // signature/flags did not verify
-            _ => throw new ArgumentException($"Malformed ownership proof (native error {rc})."),
+            0 => true,                                            // WABISABI_OK
+            (int)WabiSabiNativeError.InvalidProof => false,       // signature/flags did not verify
+            (int)WabiSabiNativeError.InvalidLength => false,      // malformed length (e.g. oversized script)
+            (int)WabiSabiNativeError.Parse => false,              // malformed proof bytes (e.g. oversized witness)
+            _ => throw new InvalidOperationException($"Ownership proof verification failed (native error {rc})."),
         };
     }
 
@@ -138,5 +145,7 @@ public static class OwnershipProof
 internal enum WabiSabiNativeError
 {
     Ok = 0,
+    InvalidLength = 2,
+    Parse = 3,
     InvalidProof = 4,
 }

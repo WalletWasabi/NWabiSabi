@@ -133,6 +133,69 @@ public class LargeRangeWidthTests
         Assert.Equal(0L, issuer.Balance);
     }
 
+    // The NATIVE client must shape an output-registration request the same way the managed
+    // client does: CreateRequest(credentials, ct) presents credentials and requests NONE.
+    // The native wrapper used to pad the amounts up to NumberOfCredentials, emitting 2 extra
+    // zero-value credential requests (2 superfluous range proofs, and a request shape that
+    // reveals the client version). This mirrors PresentationOnly_CSharpClient_NativeIssuer but
+    // with the native client, so it guards against that padding regression.
+    [Fact]
+    public void PresentationOnly_NativeClient_NativeIssuer()
+    {
+        var sk      = new CredentialIssuerSecretKey(ChainRng("pres-nat-sk"));
+        var iparams = sk.ComputeCredentialIssuerParameters();
+
+        var client = new NativeClient(iparams, ChainRng("pres-nat-client"), WalletWasabiMaxAmount);
+        var issuer = new NativeIssuer(sk, ChainRng("pres-nat-issuer"), WalletWasabiMaxAmount);
+
+        var zero      = client.CreateRequestForZeroAmount();
+        var zeroResp  = issuer.HandleRequest(zero.CredentialsRequest);
+        var zeroCreds = client.HandleResponse(zeroResp, zero.CredentialsResponseValidation).ToArray();
+
+        var real      = client.CreateRequest(Amounts, zeroCreds, CancellationToken.None);
+        var realResp  = issuer.HandleRequest(real.CredentialsRequest);
+        var creds     = client.HandleResponse(realResp, real.CredentialsResponseValidation).ToArray();
+
+        // Presentation-only request: present the credentials, request nothing.
+        var present = client.CreateRequest(creds, CancellationToken.None);
+        Assert.Empty(present.CredentialsRequest.Requested);
+        Assert.True(present.CredentialsRequest.IsPresentationOnlyRequest());
+
+        var presentResp = issuer.HandleRequest(present.CredentialsRequest);
+        Assert.Empty(presentResp.IssuedCredentials);
+        Assert.Empty(presentResp.Proofs);
+        Assert.Equal(0L, issuer.Balance);
+    }
+
+    // Cross-implementation guard: the native client's presentation-only proof must verify under the
+    // MANAGED issuer. Runs the whole flow (bootstrap + real issuance + output registration) against a
+    // single C# issuer so its balance is credited before the negative-delta presentation request.
+    [Fact]
+    public void PresentationOnly_NativeClient_CSharpIssuer()
+    {
+        var sk      = new CredentialIssuerSecretKey(ChainRng("pres-natcs-sk"));
+        var iparams = sk.ComputeCredentialIssuerParameters();
+
+        var client = new NativeClient(iparams, ChainRng("pres-natcs-client"), WalletWasabiMaxAmount);
+        var issuer = new CsIssuer(sk, ChainRng("pres-natcs-issuer"), WalletWasabiMaxAmount);
+
+        var zero      = client.CreateRequestForZeroAmount();
+        var zeroResp  = issuer.HandleRequest(WireRoundTripZero(zero.CredentialsRequest));
+        var zeroCreds = client.HandleResponse(zeroResp, zero.CredentialsResponseValidation).ToArray();
+
+        var real      = client.CreateRequest(Amounts, zeroCreds, CancellationToken.None);
+        var realResp  = issuer.HandleRequest(real.CredentialsRequest);
+        var creds     = client.HandleResponse(realResp, real.CredentialsResponseValidation).ToArray();
+
+        var present = client.CreateRequest(creds, CancellationToken.None);
+        Assert.Empty(present.CredentialsRequest.Requested);
+        Assert.True(present.CredentialsRequest.IsPresentationOnlyRequest());
+
+        var presentResp = issuer.HandleRequest(present.CredentialsRequest);
+        Assert.Empty(presentResp.IssuedCredentials);
+        Assert.Empty(presentResp.Proofs);
+    }
+
     // The native client emits a ZeroCredentialsRequest; round-trip it through the wire
     // so the C# issuer receives exactly the serialized form (mirrors the existing suite).
     private static WabiSabi.CredentialRequesting.ZeroCredentialsRequest WireRoundTripZero(

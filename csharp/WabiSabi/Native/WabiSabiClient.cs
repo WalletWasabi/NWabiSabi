@@ -86,7 +86,11 @@ public class WabiSabiClient
     public RealCredentialsRequestData CreateRequest(
         IEnumerable<Credential> credentialsToPresent,
         CancellationToken cancellationToken)
-        => CreateRequest(Array.Empty<long>(), credentialsToPresent, cancellationToken);
+        // Presentation-only (output registration): present credentials, request none.
+        // Mirrors the managed client, which does NOT pad here — padding would emit
+        // NumberOfCredentials superfluous zero-value credential requests (extra range
+        // proofs) and leak the client version via the request shape.
+        => InternalCreateRequest(Array.Empty<long>(), credentialsToPresent, cancellationToken);
 
     /// <summary>Creates a request to present credentials and obtain credentials of the given <paramref name="amountsToRequest"/>.</summary>
     public RealCredentialsRequestData CreateRequest(
@@ -94,8 +98,18 @@ public class WabiSabiClient
         IEnumerable<Credential> credentialsToPresent,
         CancellationToken cancellationToken)
     {
-        var amounts    = amountsToRequest.ToList();
+        // Always request the same number of credentials — pad with zero-value ones.
+        var amounts = amountsToRequest.ToList();
         while (amounts.Count < NumberOfCredentials) amounts.Add(0L);
+        return InternalCreateRequest(amounts, credentialsToPresent, cancellationToken);
+    }
+
+    private RealCredentialsRequestData InternalCreateRequest(
+        IEnumerable<long> amountsToRequest,
+        IEnumerable<Credential> credentialsToPresent,
+        CancellationToken cancellationToken)
+    {
+        var amounts    = amountsToRequest.ToList();
 
         var credsList  = credentialsToPresent.ToArray();
         var credsBytes = WireFormat.PackCredentials(credsList);

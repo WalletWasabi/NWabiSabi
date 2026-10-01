@@ -978,6 +978,29 @@ op_error_t bip322_signature_verify(
             return OP_ERROR_VERIFICATION_FAILED;
         }
 
+        /* BIP-341: the 64-byte form implies SIGHASH_DEFAULT. The 65-byte form
+         * carries an explicit sighash byte which must NOT be 0x00 (that use the
+         * 64-byte form) and must be a defined Taproot sighash type. NBitcoin
+         * (the managed reference, via PayToTaprootTemplate) rejects anything
+         * else, so accepting an arbitrary trailing byte here would let a
+         * coordinator admit an input every managed client rejects. Only the
+         * first 64 bytes feed the Schnorr verify, so without this check any
+         * 65th byte would be silently ignored. */
+        if (sig->witness.items[0].length == 65) {
+            uint8_t sighash = sig->witness.items[0].data[64];
+            switch (sighash) {
+            case 0x01: /* ALL */
+            case 0x02: /* NONE */
+            case 0x03: /* SINGLE */
+            case 0x81: /* ALL   | ANYONECANPAY */
+            case 0x82: /* NONE  | ANYONECANPAY */
+            case 0x83: /* SINGLE| ANYONECANPAY */
+                break;
+            default:
+                return OP_ERROR_VERIFICATION_FAILED;
+            }
+        }
+
         /* Extract x-only pubkey from script */
         /* Script is: OP_1 0x20 <32-byte-x-only-pubkey> */
         secp256k1_xonly_pubkey xonly_pubkey;
