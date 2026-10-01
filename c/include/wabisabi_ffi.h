@@ -56,6 +56,11 @@
 #ifndef WABISABI_VALUE_SIZE
 #define WABISABI_VALUE_SIZE 8 /* 8-byte LE amount field */
 #endif
+/* rand_bytes is a 32-byte seed. Internally it is expanded into a deterministic
+ * stream of 32-byte blocks (block_i = SHA256(seed || LE32(i))) consumed in the
+ * same order and with the same rejection rule as the managed WasabiRandom, so an
+ * identical seed yields byte-identical wire output on both implementations (a
+ * differential-testing property; production passes a fresh random seed). */
 #define WABISABI_RAND_SIZE    WABISABI_SCALAR_SIZE
 #define WABISABI_SK_SIZE      (5 * WABISABI_SCALAR_SIZE) /* w + wp + x0 + x1 + ya */
 #define WABISABI_IPARAMS_SIZE (2 * WABISABI_GE_SIZE)     /* Cw + I */

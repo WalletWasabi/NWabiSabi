@@ -29,6 +29,17 @@ next_random(uint8_t* out) {
     memcpy(out, tmp, 32);
 }
 
+/* Produce a 32-byte seed and wrap it in a seed-expansion stream. The client/
+ * issuer expand the seed into as many 32-byte blocks (SHA256(seed || LE32(i)))
+ * as they need, so a single seed suffices for a full-protocol round-trip. */
+#define TEST_STREAM_BYTES 32
+static void
+fill_stream(wabisabi_rand_stream_t* s, uint8_t* seed, size_t len) {
+    (void)len;
+    next_random(seed);
+    wabisabi_rand_stream_init(s, seed);
+}
+
 static void
 test_generators(void) {
     printf("Testing generators...\n");
@@ -228,7 +239,9 @@ test_zero_proof(void) {
     wabisabi_transcript_clone(&t2, &t1);
 
     wabisabi_proof_t proof;
-    wabisabi_prove(&proof, &t1, kn, 1, rnd, 32);
+    wabisabi_rand_stream_t rng;
+    wabisabi_rand_stream_init(&rng, rnd);
+    wabisabi_prove(&proof, &t1, kn, 1, &rng);
 
     wabisabi_statement_t* stmt = malloc(sizeof(*stmt));
     wabisabi_zero_proof_statement_into(stmt, &ma);
@@ -275,16 +288,18 @@ test_full_protocol(void) {
     /* --- Phase 1: Bootstrap (zero-value credentials) --- */
     printf("  Phase 1: Bootstrap...\n");
 
-    uint8_t client_rand[32];
-    next_random(client_rand);
+    uint8_t client_rand[TEST_STREAM_BYTES];
+    wabisabi_rand_stream_t client_rng;
+    fill_stream(&client_rng, client_rand, sizeof(client_rand));
     wabisabi_zero_request_t zero_req;
     wabisabi_response_validation_t zero_val;
-    wabisabi_client_state_create_zero_request(&client, client_rand, &zero_req, &zero_val);
+    wabisabi_client_state_create_zero_request(&client, &client_rng, &zero_req, &zero_val);
 
-    uint8_t issuer_rand[32];
-    next_random(issuer_rand);
+    uint8_t issuer_rand[TEST_STREAM_BYTES];
+    wabisabi_rand_stream_t issuer_rng;
+    fill_stream(&issuer_rng, issuer_rand, sizeof(issuer_rand));
     wabisabi_response_t zero_resp;
-    wabisabi_error_t err = wabisabi_issuer_state_handle_zero(&issuer, &zero_req, &zero_resp, issuer_rand);
+    wabisabi_error_t err = wabisabi_issuer_state_handle_zero(&issuer, &zero_req, &zero_resp, &issuer_rng);
     if (err != WABISABI_OK) {
         printf("  ERROR: issuer rejected zero request (code %d)\n", err);
         assert(0);
@@ -308,18 +323,20 @@ test_full_protocol(void) {
     printf("  Phase 2: Input registration...\n");
 
     int64_t amounts_to_request[] = {500000, 300000};
-    uint8_t client_rand2[32];
-    next_random(client_rand2);
+    uint8_t client_rand2[TEST_STREAM_BYTES];
+    wabisabi_rand_stream_t client_rng2;
+    fill_stream(&client_rng2, client_rand2, sizeof(client_rand2));
     wabisabi_real_request_t real_req;
     wabisabi_response_validation_t real_val;
 
     wabisabi_client_state_create_real_request(&client, amounts_to_request, 2, credentials, WABISABI_CREDENTIAL_COUNT,
-                                              client_rand2, &real_req, &real_val);
+                                              &client_rng2, &real_req, &real_val);
 
-    uint8_t issuer_rand2[32];
-    next_random(issuer_rand2);
+    uint8_t issuer_rand2[TEST_STREAM_BYTES];
+    wabisabi_rand_stream_t issuer_rng2;
+    fill_stream(&issuer_rng2, issuer_rand2, sizeof(issuer_rand2));
     wabisabi_response_t real_resp;
-    err = wabisabi_issuer_state_handle_real(&issuer, &real_req, &real_resp, issuer_rand2);
+    err = wabisabi_issuer_state_handle_real(&issuer, &real_req, &real_resp, &issuer_rng2);
     if (err != WABISABI_OK) {
         printf("  ERROR: issuer rejected real request (code %d)\n", err);
         assert(0);

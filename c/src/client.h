@@ -25,11 +25,12 @@ void wabisabi_client_state_init(wabisabi_client_state_t* c, const wabisabi_ipara
                                 int64_t range_proof_upper_bound);
 
 /* Create a bootstrap request (zero-value credentials).
- * random_bytes: 32+ bytes of randomness.
+ * rng: randomness stream (consumed in managed-reference order). Inspect
+ *      rng->overrun afterwards to detect exhaustion.
  * out_req: populated with the zero-credential request.
  * out_val: populated with state needed to validate the response.
  */
-void wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, const uint8_t* random_bytes,
+void wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, wabisabi_rand_stream_t* rng,
                                                wabisabi_zero_request_t* out_req,
                                                wabisabi_response_validation_t* out_val);
 
@@ -39,7 +40,7 @@ void wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, const
  */
 void wabisabi_client_state_create_present_request(wabisabi_client_state_t* c,
                                                   const wabisabi_credential_t* credentials_to_present, int n_present,
-                                                  const uint8_t* random_bytes, wabisabi_real_request_t* out_req,
+                                                  wabisabi_rand_stream_t* rng, wabisabi_real_request_t* out_req,
                                                   wabisabi_response_validation_t* out_val);
 
 /* Create a real request with specific amounts to request.
@@ -50,7 +51,7 @@ void wabisabi_client_state_create_present_request(wabisabi_client_state_t* c,
  */
 void wabisabi_client_state_create_real_request(wabisabi_client_state_t* c, const int64_t* amounts_to_request,
                                                int n_amounts, const wabisabi_credential_t* credentials_to_present,
-                                               int n_present, const uint8_t* random_bytes,
+                                               int n_present, wabisabi_rand_stream_t* rng,
                                                wabisabi_real_request_t* out_req,
                                                wabisabi_response_validation_t* out_val);
 

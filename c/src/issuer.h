@@ -57,11 +57,12 @@ typedef struct {
 void wabisabi_issuer_state_init(wabisabi_issuer_state_t* issuer, const wabisabi_sk_t* sk, int64_t max_amount);
 
 /* Handle a zero-value (bootstrap) request.
- * random_bytes: 32 bytes of randomness for issuing t values.
+ * rng: randomness stream for issuing t values and nonce seeds (consumed in
+ *      managed-reference order). Inspect rng->overrun afterwards for exhaustion.
  */
 wabisabi_error_t wabisabi_issuer_state_handle_zero(wabisabi_issuer_state_t* issuer, const wabisabi_zero_request_t* req,
-                                                   wabisabi_response_t* resp, const uint8_t* random_bytes);
+                                                   wabisabi_response_t* resp, wabisabi_rand_stream_t* rng);
 
 /* Handle a real credential request */
 wabisabi_error_t wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisabi_real_request_t* req,
-                                                   wabisabi_response_t* resp, const uint8_t* random_bytes);
+                                                   wabisabi_response_t* resp, wabisabi_rand_stream_t* rng);

@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "generators.h"
-#include "sha256.h"
 
 static int
 ceil_log2_client(int64_t v) {
@@ -32,24 +31,15 @@ wabisabi_client_state_init(wabisabi_client_state_t* c, const wabisabi_iparams_t*
 }
 
 void
-wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, const uint8_t* random_bytes,
+wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, wabisabi_rand_stream_t* rng,
                                           wabisabi_zero_request_t* out_req, wabisabi_response_validation_t* out_val) {
     (void)c; /* iparams not needed for zero-value credentials */
     wabisabi_knowledge_t* knowledge = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_knowledge_t));
 
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        /* Derive randomness for each credential */
-        uint8_t seed[WABISABI_SCALAR_SIZE + 1];
-        memcpy(seed, random_bytes, WABISABI_SCALAR_SIZE);
-        seed[WABISABI_SCALAR_SIZE] = (uint8_t)i;
-        uint8_t r_bytes[WABISABI_SCALAR_SIZE];
-        sha256(seed, WABISABI_SCALAR_SIZE + 1, r_bytes);
-        while (!secp256k1_ec_seckey_verify(WABISABI_CTX, r_bytes)) {
-            sha256(r_bytes, WABISABI_SCALAR_SIZE, r_bytes);
-        }
-
+        /* Draw randomness for each credential (GetScalar). */
         wabisabi_scalar_t randomness;
-        memcpy(randomness.data, r_bytes, WABISABI_SCALAR_SIZE);
+        wabisabi_rand_stream_scalar(rng, &randomness);
 
         /* ma = randomness * Gh */
         wabisabi_ge_t ma;
@@ -69,15 +59,7 @@ wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, const uint
     wabisabi_transcript_t prove_transcript;
     build_transcript(&prove_transcript, 1);
 
-    /* Derive prove randomness */
-    uint8_t prove_rand[WABISABI_SCALAR_SIZE];
-    uint8_t seed2[WABISABI_SCALAR_SIZE + 1];
-    memcpy(seed2, random_bytes, WABISABI_SCALAR_SIZE);
-    seed2[WABISABI_SCALAR_SIZE] = 0xFF;
-    sha256(seed2, WABISABI_SCALAR_SIZE + 1, prove_rand);
-
-    wabisabi_prove(out_req->proofs, &prove_transcript, knowledge, WABISABI_CREDENTIAL_COUNT, prove_rand,
-                   WABISABI_SCALAR_SIZE);
+    wabisabi_prove(out_req->proofs, &prove_transcript, knowledge, WABISABI_CREDENTIAL_COUNT, rng);
 
     free(knowledge);
 
@@ -92,7 +74,7 @@ wabisabi_client_state_create_zero_request(wabisabi_client_state_t* c, const uint
 /* Internal helper: build a real request */
 static void
 internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_request, int n_amounts,
-                     const wabisabi_credential_t* credentials_to_present, int n_present, const uint8_t* random_bytes,
+                     const wabisabi_credential_t* credentials_to_present, int n_present, wabisabi_rand_stream_t* rng,
                      wabisabi_real_request_t* out_req, wabisabi_response_validation_t* out_val) {
     /* Pad amounts to k */
     int64_t amounts[WABISABI_CREDENTIAL_COUNT] = {0};
@@ -108,16 +90,8 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
     int64_t total_presented = 0;
 
     for (int i = 0; i < n_present; i++) {
-        /* Derive z */
-        uint8_t seed[WABISABI_SCALAR_SIZE + 1];
-        memcpy(seed, random_bytes, WABISABI_SCALAR_SIZE);
-        seed[WABISABI_SCALAR_SIZE] = (uint8_t)i;
-        uint8_t z_bytes[WABISABI_SCALAR_SIZE];
-        sha256(seed, WABISABI_SCALAR_SIZE + 1, z_bytes);
-        while (!secp256k1_ec_seckey_verify(WABISABI_CTX, z_bytes)) {
-            sha256(z_bytes, WABISABI_SCALAR_SIZE, z_bytes);
-        }
-        memcpy(z_scalars[i].data, z_bytes, WABISABI_SCALAR_SIZE);
+        /* Draw z (GetScalar). */
+        wabisabi_rand_stream_scalar(rng, &z_scalars[i]);
 
         out_req->presented[i] =
             wabisabi_credential_present(&credentials_to_present[i].mac, credentials_to_present[i].value,
@@ -139,18 +113,9 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
         int64_t val = amounts[i];
         total_requested += val;
 
-        /* Derive randomness for issuance */
-        uint8_t seed[WABISABI_SCALAR_SIZE + 1];
-        memcpy(seed, random_bytes, WABISABI_SCALAR_SIZE);
-        seed[WABISABI_SCALAR_SIZE] = (uint8_t)(128 + i);
-        uint8_t r_bytes[WABISABI_SCALAR_SIZE];
-        sha256(seed, WABISABI_SCALAR_SIZE + 1, r_bytes);
-        while (!secp256k1_ec_seckey_verify(WABISABI_CTX, r_bytes)) {
-            sha256(r_bytes, WABISABI_SCALAR_SIZE, r_bytes);
-        }
-
+        /* Draw issuance randomness (GetScalar). */
         wabisabi_scalar_t randomness;
-        memcpy(randomness.data, r_bytes, WABISABI_SCALAR_SIZE);
+        wabisabi_rand_stream_scalar(rng, &randomness);
 
         wabisabi_scalar_t val_scalar;
         memset(val_scalar.data, 0, WABISABI_SCALAR_SIZE);
@@ -162,15 +127,9 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
         wabisabi_ge_t ma;
         wabisabi_pedersen_commit(&ma, &val_scalar, &randomness);
 
-        /* Bit randomness seed */
-        uint8_t bit_seed[WABISABI_SCALAR_SIZE + 1];
-        memcpy(bit_seed, r_bytes, WABISABI_SCALAR_SIZE);
-        bit_seed[WABISABI_SCALAR_SIZE] = 0xBB;
-        uint8_t bit_rand[WABISABI_SCALAR_SIZE];
-        sha256(bit_seed, WABISABI_SCALAR_SIZE + 1, bit_rand);
-
-        wabisabi_range_proof_knowledge_into(rp, &val_scalar, &randomness, c->range_proof_width, bit_rand,
-                                            WABISABI_SCALAR_SIZE);
+        /* Bit randomness is drawn from the stream inside the builder (width
+         * GetScalar calls), matching RangeProofKnowledge. */
+        wabisabi_range_proof_knowledge_into(rp, &val_scalar, &randomness, c->range_proof_width, rng);
 
         /* Fill issuance request */
         out_req->requested[i].ma = ma;
@@ -224,13 +183,7 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
     wabisabi_transcript_t prove_transcript;
     build_transcript(&prove_transcript, 0);
 
-    uint8_t prove_rand[WABISABI_SCALAR_SIZE];
-    uint8_t seed2[WABISABI_SCALAR_SIZE + 1];
-    memcpy(seed2, random_bytes, WABISABI_SCALAR_SIZE);
-    seed2[WABISABI_SCALAR_SIZE] = 0xAA;
-    sha256(seed2, WABISABI_SCALAR_SIZE + 1, prove_rand);
-
-    wabisabi_prove(out_req->proofs, &prove_transcript, all_knowledge, n_knowledge, prove_rand, WABISABI_SCALAR_SIZE);
+    wabisabi_prove(out_req->proofs, &prove_transcript, all_knowledge, n_knowledge, rng);
 
     free(all_knowledge);
 
@@ -243,18 +196,17 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
 void
 wabisabi_client_state_create_present_request(wabisabi_client_state_t* c,
                                              const wabisabi_credential_t* credentials_to_present, int n_present,
-                                             const uint8_t* random_bytes, wabisabi_real_request_t* out_req,
+                                             wabisabi_rand_stream_t* rng, wabisabi_real_request_t* out_req,
                                              wabisabi_response_validation_t* out_val) {
-    internal_create_real(c, NULL, 0, credentials_to_present, n_present, random_bytes, out_req, out_val);
+    internal_create_real(c, NULL, 0, credentials_to_present, n_present, rng, out_req, out_val);
 }
 
 void
 wabisabi_client_state_create_real_request(wabisabi_client_state_t* c, const int64_t* amounts_to_request, int n_amounts,
                                           const wabisabi_credential_t* credentials_to_present, int n_present,
-                                          const uint8_t* random_bytes, wabisabi_real_request_t* out_req,
+                                          wabisabi_rand_stream_t* rng, wabisabi_real_request_t* out_req,
                                           wabisabi_response_validation_t* out_val) {
-    internal_create_real(c, amounts_to_request, n_amounts, credentials_to_present, n_present, random_bytes, out_req,
-                         out_val);
+    internal_create_real(c, amounts_to_request, n_amounts, credentials_to_present, n_present, rng, out_req, out_val);
 }
 
 wabisabi_error_t
