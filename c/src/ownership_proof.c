@@ -67,6 +67,152 @@ static secp256k1_context *get_secp_context(void) {
     return secp_ctx;
 }
 
+/* Lax DER signature parser, vendored verbatim from libsecp256k1's
+ * contrib/lax_der_parsing.c. That file's own header asks downstreams to copy it
+ * in rather than link it, and the managed reference (NBitcoin) parses ECDSA
+ * signatures with a port of this exact routine. To keep the two ownership-proof
+ * verifiers in agreement (so a coordinator never accepts an input a client
+ * rejects, or vice-versa) the native side must accept the same non-strict-DER
+ * encodings NBitcoin does. Kept file-static so it adds no exported symbol. */
+static int ecdsa_signature_parse_der_lax(const secp256k1_context* ctx,
+        secp256k1_ecdsa_signature* sig, const unsigned char *input, size_t inputlen) {
+    size_t rpos, rlen, spos, slen;
+    size_t pos = 0;
+    size_t lenbyte;
+    unsigned char tmpsig[64] = {0};
+    int overflow = 0;
+
+    /* Hack to initialize sig with a correctly-parsed but invalid signature. */
+    secp256k1_ecdsa_signature_parse_compact(ctx, sig, tmpsig);
+
+    /* Sequence tag byte */
+    if (pos == inputlen || input[pos] != 0x30) {
+        return 0;
+    }
+    pos++;
+
+    /* Sequence length bytes */
+    if (pos == inputlen) {
+        return 0;
+    }
+    lenbyte = input[pos++];
+    if (lenbyte & 0x80) {
+        lenbyte -= 0x80;
+        if (lenbyte > inputlen - pos) {
+            return 0;
+        }
+        pos += lenbyte;
+    }
+
+    /* Integer tag byte for R */
+    if (pos == inputlen || input[pos] != 0x02) {
+        return 0;
+    }
+    pos++;
+
+    /* Integer length for R */
+    if (pos == inputlen) {
+        return 0;
+    }
+    lenbyte = input[pos++];
+    if (lenbyte & 0x80) {
+        lenbyte -= 0x80;
+        if (lenbyte > inputlen - pos) {
+            return 0;
+        }
+        while (lenbyte > 0 && input[pos] == 0) {
+            pos++;
+            lenbyte--;
+        }
+        if (lenbyte >= sizeof(size_t)) {
+            return 0;
+        }
+        rlen = 0;
+        while (lenbyte > 0) {
+            rlen = (rlen << 8) + input[pos];
+            pos++;
+            lenbyte--;
+        }
+    } else {
+        rlen = lenbyte;
+    }
+    if (rlen > inputlen - pos) {
+        return 0;
+    }
+    rpos = pos;
+    pos += rlen;
+
+    /* Integer tag byte for S */
+    if (pos == inputlen || input[pos] != 0x02) {
+        return 0;
+    }
+    pos++;
+
+    /* Integer length for S */
+    if (pos == inputlen) {
+        return 0;
+    }
+    lenbyte = input[pos++];
+    if (lenbyte & 0x80) {
+        lenbyte -= 0x80;
+        if (lenbyte > inputlen - pos) {
+            return 0;
+        }
+        while (lenbyte > 0 && input[pos] == 0) {
+            pos++;
+            lenbyte--;
+        }
+        if (lenbyte >= sizeof(size_t)) {
+            return 0;
+        }
+        slen = 0;
+        while (lenbyte > 0) {
+            slen = (slen << 8) + input[pos];
+            pos++;
+            lenbyte--;
+        }
+    } else {
+        slen = lenbyte;
+    }
+    if (slen > inputlen - pos) {
+        return 0;
+    }
+    spos = pos;
+
+    /* Ignore leading zeroes in R */
+    while (rlen > 0 && input[rpos] == 0) {
+        rlen--;
+        rpos++;
+    }
+    /* Copy R value */
+    if (rlen > 32) {
+        overflow = 1;
+    } else if (rlen) {
+        memcpy(tmpsig + 32 - rlen, input + rpos, rlen);
+    }
+
+    /* Ignore leading zeroes in S */
+    while (slen > 0 && input[spos] == 0) {
+        slen--;
+        spos++;
+    }
+    /* Copy S value */
+    if (slen > 32) {
+        overflow = 1;
+    } else if (slen) {
+        memcpy(tmpsig + 64 - slen, input + spos, slen);
+    }
+
+    if (!overflow) {
+        overflow = !secp256k1_ecdsa_signature_parse_compact(ctx, sig, tmpsig);
+    }
+    if (overflow) {
+        memset(tmpsig, 0, 64);
+        secp256k1_ecdsa_signature_parse_compact(ctx, sig, tmpsig);
+    }
+    return 1;
+}
+
 /* Utility functions */
 
 op_error_t varint_write(uint64_t value, uint8_t *out, size_t *out_len) {
@@ -929,31 +1075,39 @@ op_error_t bip322_signature_verify(
             return OP_ERROR_VERIFICATION_FAILED;
         }
 
+        /* Parse with the lax DER parser (not the strict one): NBitcoin accepts
+         * non-minimal / non-strict DER, so the native verifier must too to stay
+         * in agreement. */
         size_t der_len = sig->witness.items[0].length - 1;
         secp256k1_ecdsa_signature ecdsa_sig;
-        if (!secp256k1_ecdsa_signature_parse_der(ctx, &ecdsa_sig,
+        if (!ecdsa_signature_parse_der_lax(ctx, &ecdsa_sig,
                 sig->witness.items[0].data, der_len)) {
             return OP_ERROR_VERIFICATION_FAILED;
         }
+        /* Accept high-S signatures. secp256k1_ecdsa_verify only accepts low-S,
+         * but NBitcoin's verify does not reject high-S, so normalize to low-S
+         * first to match. */
+        secp256k1_ecdsa_signature_normalize(ctx, &ecdsa_sig, &ecdsa_sig);
 
-        /* Parse public key */
-        if (sig->witness.items[1].length != 33) {
+        /* Parse public key. Accept both compressed (33) and uncompressed (65)
+         * encodings — NBitcoin accepts either. */
+        size_t pk_len = sig->witness.items[1].length;
+        if (pk_len != 33 && pk_len != 65) {
             return OP_ERROR_VERIFICATION_FAILED;
         }
 
         secp256k1_pubkey pubkey;
         if (!secp256k1_ec_pubkey_parse(ctx, &pubkey,
-                sig->witness.items[1].data, sig->witness.items[1].length)) {
+                sig->witness.items[1].data, pk_len)) {
             return OP_ERROR_VERIFICATION_FAILED;
         }
 
-        /* Verify pubkey matches script */
-        uint8_t pubkey_bytes[33];
-        size_t pubkey_len = 33;
-        secp256k1_ec_pubkey_serialize(ctx, pubkey_bytes, &pubkey_len, &pubkey, SECP256K1_EC_COMPRESSED);
-
+        /* Verify pubkey matches script. NBitcoin's witness-program is the
+         * HASH160 of the key in the exact encoding presented in the witness, so
+         * hash the raw witness bytes rather than a re-serialized compressed form
+         * (otherwise an uncompressed key would never match its own program). */
         uint8_t sha_hash[32];
-        sha256(pubkey_bytes, 33, sha_hash);
+        sha256(sig->witness.items[1].data, pk_len, sha_hash);
 
         uint8_t hash160[20];
         ripemd160(sha_hash, 32, hash160);
@@ -969,8 +1123,16 @@ op_error_t bip322_signature_verify(
         }
 
     } else if (script_type == SCRIPT_TYPE_P2TR) {
-        /* P2TR witness: [signature] (64 bytes for default sighash, 65 for explicit) */
-        if (sig->witness.num_items != 1) {
+        /* P2TR witness: [signature] or [signature, annex]. BIP-341 permits a
+         * trailing annex — an extra stack item whose first byte is 0x50 — which
+         * is stripped before signature verification. NBitcoin accepts and strips
+         * it, so the native verifier must too; the signature is always item 0. */
+        if (sig->witness.num_items == 2) {
+            if (sig->witness.items[1].length == 0 ||
+                sig->witness.items[1].data[0] != 0x50) {
+                return OP_ERROR_VERIFICATION_FAILED;
+            }
+        } else if (sig->witness.num_items != 1) {
             return OP_ERROR_VERIFICATION_FAILED;
         }
 
