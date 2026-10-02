@@ -18,8 +18,6 @@ internal sealed class ThreadSafeRandom : WasabiRandom
 {
     public override void GetBytes(byte[] output) => RandomNumberGenerator.Fill(output);
     public override void GetBytes(Span<byte> output) => RandomNumberGenerator.Fill(output);
-    public override int GetInt(int fromInclusive, int toExclusive) =>
-        RandomNumberGenerator.GetInt32(fromInclusive, toExclusive);
 }
 
 /// <summary>

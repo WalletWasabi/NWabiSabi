@@ -1,11 +1,9 @@
-using NBitcoin;
 using NBitcoin.Secp256k1;
-using System.Linq;
 using WabiSabi.Helpers;
 
 namespace WabiSabi.Crypto.Randomness;
 
-public abstract class WasabiRandom : IRandom
+public abstract class WasabiRandom
 {
 	public abstract void GetBytes(byte[] output);
 
@@ -17,20 +15,6 @@ public abstract class WasabiRandom : IRandom
 		var buffer = new byte[length];
 		GetBytes(buffer);
 		return buffer;
-	}
-
-	public abstract int GetInt(int fromInclusive, int toExclusive);
-
-	public string GetString(int length, string chars)
-	{
-		Guard.MinimumAndNotNull(nameof(length), length, 1);
-		Guard.NotNullOrEmpty(nameof(chars), chars);
-
-		var random = new string(Enumerable
-			.Repeat(chars, length)
-			.Select(s => s[GetInt(0, s.Length)])
-			.ToArray());
-		return random;
 	}
 
 	public virtual Scalar GetScalar()
@@ -46,8 +30,4 @@ public abstract class WasabiRandom : IRandom
 		while (overflow != 0 || randomScalar.IsZero);
 		return randomScalar;
 	}
-}
-
-public interface IRandom
-{
 }

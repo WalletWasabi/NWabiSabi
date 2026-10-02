@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using WabiSabi.Crypto.Randomness;
 
@@ -30,12 +29,5 @@ public sealed class Sha256ChainRandom : WasabiRandom
             _state.AsSpan(0, chunk).CopyTo(buffer.Slice(written));
             written += chunk;
         }
-    }
-
-    public override int GetInt(int fromInclusive, int toExclusive)
-    {
-        _state = SHA256.HashData(_state);
-        uint v = MemoryMarshal.Read<uint>(_state);
-        return fromInclusive + (int)(v % (uint)(toExclusive - fromInclusive));
     }
 }

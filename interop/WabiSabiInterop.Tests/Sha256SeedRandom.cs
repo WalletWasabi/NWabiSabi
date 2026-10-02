@@ -54,14 +54,6 @@ public sealed class Sha256SeedRandom : WasabiRandom
             written += chunk;
         }
     }
-
-    public override int GetInt(int fromInclusive, int toExclusive)
-    {
-        Span<byte> b = stackalloc byte[4];
-        GetBytes(b);
-        uint v = (uint)(b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24));
-        return fromInclusive + (int)(v % (uint)(toExclusive - fromInclusive));
-    }
 }
 
 /// <summary>
@@ -94,7 +86,4 @@ public sealed class FixedSeedRandom : WasabiRandom
         }
         _seed.CopyTo(buffer);
     }
-
-    public override int GetInt(int fromInclusive, int toExclusive) =>
-        throw new NotSupportedException();
 }
