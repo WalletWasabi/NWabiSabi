@@ -19,9 +19,4 @@ public class SecureRandom : WasabiRandom
 	{
 		RandomNumberGenerator.Fill(buffer);
 	}
-
-	public override int GetInt(int fromInclusive, int toExclusive)
-	{
-		return RandomNumberGenerator.GetInt32(fromInclusive, toExclusive);
-	}
 }

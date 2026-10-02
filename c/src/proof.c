@@ -9,7 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "generators.h"
-#include "sha256.h"
 
 /* ---- Sparse equation operations ---- */
 
@@ -54,7 +53,7 @@ compute_public_nonce(wabisabi_ge_t* out, const wabisabi_equation_t* eq, const wa
 /* ---- Prove ---- */
 void
 wabisabi_prove(wabisabi_proof_t* out, wabisabi_transcript_t* transcript, const wabisabi_knowledge_t* knowledge, int n,
-               const uint8_t* random_bytes, size_t rnd_len) {
+               wabisabi_rand_stream_t* rng) {
     /* Scratch for the dense generator matrix. Heap-allocated (≈1.7 MB) rather
      * than a function-local `static` so that wabisabi_prove is reentrant /
      * thread-safe: concurrent callers must not share this buffer. Too large for
@@ -110,9 +109,25 @@ wabisabi_prove(wabisabi_proof_t* out, wabisabi_transcript_t* transcript, const w
         int n_wit = kn->statement.n_witnesses;
         int n_eq = kn->statement.n_equations;
 
+        /* Draw a fresh 32-byte nonce seed per knowledge, matching the managed
+         * side's one random.GetBytes(32) per SyntheticSecretNonceProvider. */
+        uint8_t nonce_seed[WABISABI_SCALAR_SIZE];
+        wabisabi_rand_stream_bytes(rng, nonce_seed, WABISABI_SCALAR_SIZE);
+
         /* Initialize synthetic nonce provider from cloned transcript + secrets */
         wabisabi_nonce_provider_t np;
-        wabisabi_nonce_provider_init(&np, transcript, kn->witness, n_wit, random_bytes, rnd_len);
+        wabisabi_nonce_provider_init(&np, transcript, kn->witness, n_wit, nonce_seed, WABISABI_SCALAR_SIZE);
+
+        /* Draw and discard one nonce before taking the real ones. This mirrors a
+         * quirk of the managed reference (the source of truth): ProofSystem.Prove
+         * builds `new ScalarVector(Sequence().Take(n))`, and ScalarVector's ctor
+         * runs Guard.NotNullOrEmpty — i.e. `.Any()` — on the lazy STROBE-backed
+         * sequence before `.ToArray()`. Because the sequence shares one STROBE
+         * state, that `.Any()` consumes (and discards) the first PRF scalar, so the
+         * nonces actually used are the 2nd..(n+1)th. Matching this is required for
+         * byte-identical output (it does not affect proof validity). */
+        wabisabi_scalar_t discarded_nonce;
+        wabisabi_nonce_provider_next(&discarded_nonce, &np);
 
         wabisabi_nonce_provider_fill(all_secret_nonces, n_wit, &np);
 
@@ -507,8 +522,7 @@ wabisabi_range_proof_statement_into(wabisabi_statement_t* stmt, const wabisabi_g
 
 void
 wabisabi_range_proof_knowledge_into(wabisabi_range_proof_t* rp, const wabisabi_scalar_t* amount,
-                                    const wabisabi_scalar_t* randomness, int width, const uint8_t* random_bytes,
-                                    size_t rnd_len) {
+                                    const wabisabi_scalar_t* randomness, int width, wabisabi_rand_stream_t* rng) {
     assert(width >= 0 && width <= WABISABI_MAX_RANGE_WIDTH);
 
     rp->width = width;
@@ -516,20 +530,11 @@ wabisabi_range_proof_knowledge_into(wabisabi_range_proof_t* rp, const wabisabi_s
     wabisabi_ge_t ma;
     wabisabi_pedersen_commit(&ma, amount, randomness);
 
-    /* Derive bit randomness from the random bytes using a simple hash */
+    /* One bit-randomness scalar per bit, drawn from the stream in order —
+     * matching RangeProofKnowledge's `width` rnd.GetScalar() calls. */
     wabisabi_scalar_t bit_randomness[WABISABI_MAX_RANGE_WIDTH];
-    {
-        /* Use SHA-256 chain to derive bit randomnesses */
-        uint8_t seed[WABISABI_SCALAR_SIZE];
-        memcpy(seed, random_bytes, rnd_len < WABISABI_SCALAR_SIZE ? rnd_len : WABISABI_SCALAR_SIZE);
-        for (int i = 0; i < width; i++) {
-            sha256(seed, WABISABI_SCALAR_SIZE, seed);
-            /* Try until valid scalar */
-            while (!secp256k1_ec_seckey_verify(WABISABI_CTX, seed)) {
-                sha256(seed, WABISABI_SCALAR_SIZE, seed);
-            }
-            memcpy(bit_randomness[i].data, seed, WABISABI_SCALAR_SIZE);
-        }
+    for (int i = 0; i < width; i++) {
+        wabisabi_rand_stream_scalar(rng, &bit_randomness[i]);
     }
 
     /* Compute bit commitments */

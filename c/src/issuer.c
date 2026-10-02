@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "generators.h"
-#include "sha256.h"
 
 /* ---- Issuer ---- */
 
@@ -48,7 +47,7 @@ issue_credential(wabisabi_mac_t* mac_out, wabisabi_knowledge_t* kn_out, const wa
 
 wabisabi_error_t
 wabisabi_issuer_state_handle_zero(wabisabi_issuer_state_t* issuer, const wabisabi_zero_request_t* req,
-                                  wabisabi_response_t* resp, const uint8_t* random_bytes) {
+                                  wabisabi_response_t* resp, wabisabi_rand_stream_t* rng) {
     /* Verify all requests have 0 bit commitments */
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
         if (req->requested[i].n_bit_commitments != 0) {
@@ -77,20 +76,13 @@ wabisabi_issuer_state_handle_zero(wabisabi_issuer_state_t* issuer, const wabisab
 
     wabisabi_knowledge_t* issue_knowledge = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_knowledge_t));
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
-        uint8_t t_bytes[WABISABI_SCALAR_SIZE];
-        /* Derive t from random_bytes + index */
-        uint8_t seed[WABISABI_SCALAR_SIZE + 1];
-        memcpy(seed, random_bytes, WABISABI_SCALAR_SIZE);
-        seed[WABISABI_SCALAR_SIZE] = (uint8_t)i;
-        sha256(seed, WABISABI_SCALAR_SIZE + 1, t_bytes);
-        while (!secp256k1_ec_seckey_verify(WABISABI_CTX, t_bytes)) {
-            sha256(t_bytes, WABISABI_SCALAR_SIZE, t_bytes);
-        }
-        issue_credential(&resp->issued[i], &issue_knowledge[i], issuer, &req->requested[i].ma, t_bytes);
+        /* Draw the MAC's t (GetScalar), matching IssueCredential(ma, rng.GetScalar()). */
+        wabisabi_scalar_t t;
+        wabisabi_rand_stream_scalar(rng, &t);
+        issue_credential(&resp->issued[i], &issue_knowledge[i], issuer, &req->requested[i].ma, t.data);
     }
 
-    wabisabi_prove(resp->proofs, &transcript, issue_knowledge, WABISABI_CREDENTIAL_COUNT, random_bytes,
-                   WABISABI_SCALAR_SIZE);
+    wabisabi_prove(resp->proofs, &transcript, issue_knowledge, WABISABI_CREDENTIAL_COUNT, rng);
 
     free(issue_knowledge);
 
@@ -100,7 +92,7 @@ wabisabi_issuer_state_handle_zero(wabisabi_issuer_state_t* issuer, const wabisab
 
 wabisabi_error_t
 wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisabi_real_request_t* req,
-                                  wabisabi_response_t* resp, const uint8_t* random_bytes) {
+                                  wabisabi_response_t* resp, wabisabi_rand_stream_t* rng) {
     /* A real request either requests no credentials (presentation-only, e.g.
      * output registration) or the full WABISABI_CREDENTIAL_COUNT. */
     if (req->n_requested != 0 && req->n_requested != WABISABI_CREDENTIAL_COUNT) {
@@ -215,19 +207,13 @@ wabisabi_issuer_state_handle_real(wabisabi_issuer_state_t* issuer, const wabisab
      * A presentation-only request (n_requested == 0) issues no credentials. */
     wabisabi_knowledge_t* issue_knowledge = malloc(WABISABI_CREDENTIAL_COUNT * sizeof(wabisabi_knowledge_t));
     for (int i = 0; i < req->n_requested; i++) {
-        uint8_t t_bytes[WABISABI_SCALAR_SIZE];
-        uint8_t seed[WABISABI_SCALAR_SIZE + 1];
-        memcpy(seed, random_bytes, WABISABI_SCALAR_SIZE);
-        seed[WABISABI_SCALAR_SIZE] = (uint8_t)i;
-        sha256(seed, WABISABI_SCALAR_SIZE + 1, t_bytes);
-        while (!secp256k1_ec_seckey_verify(WABISABI_CTX, t_bytes)) {
-            sha256(t_bytes, WABISABI_SCALAR_SIZE, t_bytes);
-        }
-        issue_credential(&resp->issued[i], &issue_knowledge[i], issuer, &req->requested[i].ma, t_bytes);
+        /* Draw the MAC's t (GetScalar), matching IssueCredential(ma, rng.GetScalar()). */
+        wabisabi_scalar_t t;
+        wabisabi_rand_stream_scalar(rng, &t);
+        issue_credential(&resp->issued[i], &issue_knowledge[i], issuer, &req->requested[i].ma, t.data);
     }
 
-    wabisabi_prove(resp->proofs, &transcript, issue_knowledge, req->n_requested, random_bytes,
-                   WABISABI_SCALAR_SIZE);
+    wabisabi_prove(resp->proofs, &transcript, issue_knowledge, req->n_requested, rng);
 
     free(issue_knowledge);
 

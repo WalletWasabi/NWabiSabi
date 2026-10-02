@@ -446,7 +446,9 @@ wabisabi_issuer_handle_zero(const uint8_t* sk_bytes, int64_t max_amount,
         off += n;
     }
 
-    ret = wabisabi_issuer_state_handle_zero(&issuer, req, resp, rand_bytes);
+    wabisabi_rand_stream_t rng;
+    wabisabi_rand_stream_init(&rng, rand_bytes);
+    ret = wabisabi_issuer_state_handle_zero(&issuer, req, resp, &rng);
     if (ret != WABISABI_OK) {
         goto cleanup;
     }
@@ -594,7 +596,9 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
         off += n;
     }
 
-    ret = wabisabi_issuer_state_handle_real(&issuer, req, resp, rand_bytes);
+    wabisabi_rand_stream_t rng;
+    wabisabi_rand_stream_init(&rng, rand_bytes);
+    ret = wabisabi_issuer_state_handle_real(&issuer, req, resp, &rng);
     if (ret != WABISABI_OK) {
         goto cleanup;
     }
@@ -659,7 +663,9 @@ wabisabi_client_create_zero_request(const uint8_t* rand_bytes,
         ret = WABISABI_ERR_ALLOC;
         goto cleanup;
     }
-    wabisabi_client_state_create_zero_request(&client, rand_bytes, req, &val);
+    wabisabi_rand_stream_t rng;
+    wabisabi_rand_stream_init(&rng, rand_bytes);
+    wabisabi_client_state_create_zero_request(&client, &rng, req, &val);
 
     int req_needed = WABISABI_CREDENTIAL_COUNT * WABISABI_GE_SIZE;
     for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
@@ -752,8 +758,10 @@ wabisabi_client_create_real_request(const uint8_t* iparams_bytes, int64_t max_am
         ret = WABISABI_ERR_ALLOC;
         goto cleanup;
     }
+    wabisabi_rand_stream_t rng;
+    wabisabi_rand_stream_init(&rng, rand_bytes);
     wabisabi_client_state_create_real_request(&client, amounts, n_amounts, creds, n_creds,
-                                              rand_bytes, req, &val);
+                                              &rng, req, &val);
     secure_zero(creds, sizeof(creds));
 
     int req_needed = WABISABI_VALUE_SIZE

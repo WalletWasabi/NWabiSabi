@@ -129,6 +129,26 @@ make_rep_knowledge(wabisabi_knowledge_t* kn, const wabisabi_scalar_t* s1, const 
     kn->witness[1] = *s2;
 }
 
+/* Thin shims wrapping a (bytes,len) buffer in a randomness stream, preserving
+ * the pre-stream call signatures used throughout this ported test suite. */
+static void
+prove_rnd(wabisabi_proof_t* out, wabisabi_transcript_t* t, const wabisabi_knowledge_t* kn, int n, const uint8_t* rnd,
+          size_t rnd_len) {
+    (void)rnd_len; /* rnd is a 32-byte seed; the stream expands it on demand */
+    wabisabi_rand_stream_t s;
+    wabisabi_rand_stream_init(&s, rnd);
+    wabisabi_prove(out, t, kn, n, &s);
+}
+
+static void
+range_kn_rnd(wabisabi_range_proof_t* rp, const wabisabi_scalar_t* a, const wabisabi_scalar_t* r, int width,
+             const uint8_t* rnd, size_t rnd_len) {
+    (void)rnd_len; /* rnd is a 32-byte seed; the stream expands it on demand */
+    wabisabi_rand_stream_t s;
+    wabisabi_rand_stream_init(&s, rnd);
+    wabisabi_range_proof_knowledge_into(rp, a, r, width, &s);
+}
+
 /* Run prove + verify under a fresh transcript pair. Returns 1 if valid. */
 static int
 prove_and_verify(const uint8_t* label, size_t label_len, const wabisabi_knowledge_t* kns, int n, const uint8_t* rnd,
@@ -145,7 +165,7 @@ prove_and_verify(const uint8_t* label, size_t label_len, const wabisabi_knowledg
         return 0;
     }
 
-    wabisabi_prove(proofs, &t1, kns, n, rnd, rnd_len);
+    prove_rnd(proofs, &t1, kns, n, rnd, rnd_len);
     for (int i = 0; i < n; i++) {
         stmts[i] = kns[i].statement;
     }
@@ -528,7 +548,7 @@ test_knowledge_of_dlog(void) {
 
         wabisabi_proof_t proof;
         *stmt = kn->statement;
-        wabisabi_prove(&proof, &t1, kn, 1, ZERO_RND, 32);
+        prove_rnd(&proof, &t1, kn, 1, ZERO_RND, 32);
         CHECK("cross-label proof fails", !wabisabi_verify(&t2, stmt, 1, &proof, 1));
     }
 
@@ -701,7 +721,7 @@ test_range_proof(void) {
         wabisabi_ge_t ma;
         wabisabi_pedersen_commit(&ma, &a, &randomness);
 
-        wabisabi_range_proof_knowledge_into(rp, &a, &randomness, width, rnd, 32);
+        range_kn_rnd(rp, &a, &randomness, width, rnd, 32);
         wabisabi_range_proof_statement_into(stmt, &ma, rp->bit_commitments, width);
 
         wabisabi_transcript_t t1, t2;
@@ -709,7 +729,7 @@ test_range_proof(void) {
         wabisabi_transcript_clone(&t2, &t1);
 
         wabisabi_proof_t proof;
-        wabisabi_prove(&proof, &t1, &rp->knowledge, 1, rnd, 32);
+        prove_rnd(&proof, &t1, &rp->knowledge, 1, rnd, 32);
         int ok = wabisabi_verify(&t2, stmt, 1, &proof, 1);
 
         char lbl[64];
@@ -752,7 +772,7 @@ test_zero_proofs(void) {
     wabisabi_transcript_clone(&t2, &t1);
 
     wabisabi_proof_t proofs[2];
-    wabisabi_prove(proofs, &t1, kn, 2, ZERO_RND, 32);
+    prove_rnd(proofs, &t1, kn, 2, ZERO_RND, 32);
     CHECK("two zero proofs verify", wabisabi_verify(&t2, stmts, 2, proofs, 2));
 
     /* A non-zero amount (1*Gg + r*Gh) must fail as a zero proof */
@@ -770,7 +790,7 @@ test_zero_proofs(void) {
     wabisabi_transcript_clone(&t2, &t1);
 
     wabisabi_proof_t proof_bad;
-    wabisabi_prove(&proof_bad, &t1, kn_x, 1, ZERO_RND, 32);
+    prove_rnd(&proof_bad, &t1, kn_x, 1, ZERO_RND, 32);
     CHECK("non-zero amount fails zero proof", !wabisabi_verify(&t2, stmt_x, 1, &proof_bad, 1));
 
     /* Proofs are NOT interchangeable between different ma values */
@@ -786,7 +806,7 @@ test_zero_proofs(void) {
         wabisabi_transcript_clone(&t2, &t1);
 
         wabisabi_proof_t proof2;
-        wabisabi_prove(&proof2, &t1, kn_x, 1, ZERO_RND, 32);
+        prove_rnd(&proof2, &t1, kn_x, 1, ZERO_RND, 32);
         CHECK("proof for ma0 fails against ma2 statement", !wabisabi_verify(&t2, stmt_x, 1, &proof2, 1));
     }
 

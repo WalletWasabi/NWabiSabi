@@ -9,6 +9,7 @@
  */
 #pragma once
 #include "mac.h"
+#include "rand_stream.h"
 #include "transcript.h"
 #include "wabisabi_types.h"
 
@@ -76,10 +77,12 @@ typedef struct {
 
 /* Prove a list of knowledge items. Writes proofs into out[n].
  * Uses the transcript for Fiat-Shamir and synthetic nonces.
- * random_bytes/rnd_len: extra randomness for nonce generation.
+ * rng: randomness stream; a fresh 32-byte block is drawn per knowledge as the
+ * synthetic-nonce STROBE key (mirroring SyntheticSecretNonceProvider's one
+ * random.GetBytes(32) per knowledge).
  */
 void wabisabi_prove(wabisabi_proof_t* out, wabisabi_transcript_t* transcript, const wabisabi_knowledge_t* knowledge,
-                    int n, const uint8_t* random_bytes, size_t rnd_len);
+                    int n, wabisabi_rand_stream_t* rng);
 
 /* Verify a list of statements against proofs. Returns 1 if all valid. */
 int wabisabi_verify(wabisabi_transcript_t* transcript, const wabisabi_statement_t* statements, int n_stmt,
@@ -135,8 +138,8 @@ void wabisabi_range_proof_statement_into(wabisabi_statement_t* out, const wabisa
                                          const wabisabi_ge_t* bit_commitments, int width);
 
 void wabisabi_range_proof_knowledge_into(wabisabi_range_proof_t* out, const wabisabi_scalar_t* amount,
-                                         const wabisabi_scalar_t* randomness, int width, const uint8_t* random_bytes,
-                                         size_t rnd_len);
+                                         const wabisabi_scalar_t* randomness, int width,
+                                         wabisabi_rand_stream_t* rng);
 
 /* Pedersen commitment: ma = amount*Gg + randomness*Gh */
 void wabisabi_pedersen_commit(wabisabi_ge_t* out, const wabisabi_scalar_t* amount, const wabisabi_scalar_t* randomness);
