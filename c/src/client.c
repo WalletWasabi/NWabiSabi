@@ -114,6 +114,25 @@ internal_create_real(wabisabi_client_state_t* c, const int64_t* amounts_to_reque
      * ~590 KB, so it must not live on the stack (it would overflow the ~1 MB
      * thread-pool stack on Windows/macOS); build it into a heap scratch buffer. */
     int64_t total_requested = 0;
+
+    /* Initialize ALL validation request slots up front. The validation state has
+     * a fixed wire layout that always serializes WABISABI_CREDENTIAL_COUNT
+     * requested slots (value, randomness, ma) — see write_validation_state — but a
+     * presentation-only request (n_requested == 0, output registration) fills none
+     * of them in the loop below. Leaving them uninitialized made
+     * write_validation_state serialize an uninitialized `ma` group element:
+     * wabisabi_ge_serialize reads a stale is_infinity == 0 and hands secp256k1 a
+     * pubkey whose x is zero, aborting with
+     * "illegal argument: !secp256k1_fe_is_zero(&ge->x)". It only bit platforms
+     * whose stack isn't zeroed (Windows); Linux's stack happened to dodge it. These
+     * zero-value / infinity slots are well-defined and never consumed
+     * (handle_response reads only n_requested of them). */
+    for (int i = 0; i < WABISABI_CREDENTIAL_COUNT; i++) {
+        out_val->requested[i].value = 0;
+        out_val->requested[i].randomness = WABISABI_SCALAR_ZERO;
+        out_val->requested[i].ma = GE_INFINITY;
+    }
+
     wabisabi_range_proof_t* rp = malloc(sizeof(*rp));
     for (int i = 0; i < n_requested; i++) {
         int64_t val = amounts[i];

@@ -111,7 +111,7 @@ target_compile_options(wabisabi PRIVATE
 )
 
 # Test executable
-add_executable(wabisabi_test tests/test_main.c tests/test_compat.c tests/test_stack.c tests/test_concurrency.c)
+add_executable(wabisabi_test tests/test_main.c tests/test_compat.c tests/test_stack.c tests/test_concurrency.c tests/test_presentation_only.c)
 target_include_directories(wabisabi_test PRIVATE include src
     ${secp256k1_SOURCE_DIR}/include)
 

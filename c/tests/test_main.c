@@ -363,6 +363,7 @@ test_full_protocol(void) {
 int run_compat_tests(void);
 int run_stack_tests(void);
 int run_concurrency_tests(void);
+int run_presentation_only_tests(void);
 
 int
 main(void) {
@@ -394,6 +395,9 @@ main(void) {
     printf("\n");
     int stack_failures = run_stack_tests();
 
+    printf("\n");
+    int presentation_only_failures = run_presentation_only_tests();
+
     wabisabi_ctx_cleanup();
     if (compat_failures > 0) {
         printf("\n=== FAILED: %d compat test(s) failed ===\n", compat_failures);
@@ -405,6 +409,10 @@ main(void) {
     }
     if (concurrency_failures > 0) {
         printf("\n=== FAILED: %d concurrency test(s) failed ===\n", concurrency_failures);
+        return 1;
+    }
+    if (presentation_only_failures > 0) {
+        printf("\n=== FAILED: %d presentation-only test(s) failed ===\n", presentation_only_failures);
         return 1;
     }
     printf("\n=== All tests passed ===\n");
