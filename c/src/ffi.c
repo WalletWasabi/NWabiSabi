@@ -343,10 +343,57 @@ read_mutable_state(const uint8_t* mstate_in, int mstate_in_len, wabisabi_issuer_
 
 /* ---- Initialization ---- */
 
-void
-wabisabi_init(void) {
+/* One-time, thread-safe library initialization.
+ *
+ * The generators (WABISABI_Gw, WABISABI_Gh, ...) are global state that starts in
+ * the zero-initialized BSS — i.e. a group element with pk == all-zero and
+ * is_infinity == 0, which secp256k1 rejects (it is neither a valid point nor the
+ * encoded infinity). wabisabi_generators_init() fills them in. If two threads
+ * call in for the first time concurrently, one can finish wabisabi_ctx_init()
+ * (so WABISABI_CTX is a valid context) while the generators are still zero, and
+ * a second thread that proceeds to a crypto op would feed a zero pubkey to
+ * secp256k1 and trip its ARG_CHECK ("!secp256k1_fe_is_zero(&ge->x)") -> abort().
+ *
+ * A platform "run exactly once, block every caller until it has completed"
+ * primitive (InitOnceExecuteOnce on Windows, pthread_once elsewhere) closes that
+ * window: no caller returns from wabisabi_init() until the generators are ready.
+ * Every FFI entry point calls ensure_init() first, so the library is safe even if
+ * the host never calls wabisabi_init() itself or races a crypto call against it. */
+#if defined(_WIN32)
+#include <windows.h>
+static INIT_ONCE g_init_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK
+wabisabi_init_once_cb(PINIT_ONCE once, PVOID param, PVOID* ctx) {
+    (void)once;
+    (void)param;
+    (void)ctx;
     wabisabi_ctx_init();
     wabisabi_generators_init();
+    return TRUE;
+}
+#else
+#include <pthread.h>
+static pthread_once_t g_init_once = PTHREAD_ONCE_INIT;
+static void
+wabisabi_init_once_cb(void) {
+    wabisabi_ctx_init();
+    wabisabi_generators_init();
+}
+#endif
+
+void
+wabisabi_init(void) {
+#if defined(_WIN32)
+    InitOnceExecuteOnce(&g_init_once, wabisabi_init_once_cb, NULL, NULL);
+#else
+    pthread_once(&g_init_once, wabisabi_init_once_cb);
+#endif
+}
+
+/* Self-initialization guard run at the top of every FFI entry point. */
+static void
+ensure_init(void) {
+    wabisabi_init();
 }
 
 void
@@ -358,6 +405,7 @@ wabisabi_cleanup(void) {
 
 wabisabi_error_t
 wabisabi_iparams_from_sk(const uint8_t* sk_bytes, uint8_t* out_bytes) {
+    ensure_init();
     if (!sk_bytes || !out_bytes) {
         return WABISABI_ERR_NULL_PTR;
     }
@@ -406,6 +454,7 @@ wabisabi_issuer_handle_zero(const uint8_t* sk_bytes, int64_t max_amount,
         || !mstate_out || !mstate_out_len) {
         return WABISABI_ERR_NULL_PTR;
     }
+    ensure_init();
     if (req_len < 2 * WABISABI_GE_SIZE) {
         return WABISABI_ERR_INVALID_LENGTH;
     }
@@ -502,6 +551,7 @@ wabisabi_issuer_handle_real(const uint8_t* sk_bytes, int64_t max_amount,
         || !mstate_out || !mstate_out_len) {
         return WABISABI_ERR_NULL_PTR;
     }
+    ensure_init();
     /* delta + n_presented byte + presentations + n_requested byte + n_proofs
      * byte (a presentation-only request carries no issuance requests). */
     int min_len = WABISABI_VALUE_SIZE + 1 + WABISABI_CREDENTIAL_COUNT * WABISABI_PRESENTATION_SIZE + 1 + 1;
@@ -644,6 +694,7 @@ wabisabi_error_t
 wabisabi_client_create_zero_request(const uint8_t* rand_bytes,
                                     uint8_t* req_out, int req_out_cap, int* req_len_out,
                                     uint8_t val_out[WABISABI_VALIDATION_SIZE]) {
+    ensure_init();
     if (!rand_bytes || !req_out || !req_len_out || !val_out) {
         return WABISABI_ERR_NULL_PTR;
     }
@@ -706,6 +757,7 @@ wabisabi_client_create_real_request(const uint8_t* iparams_bytes, int64_t max_am
                                     const uint8_t* rand_bytes,
                                     uint8_t* req_out, int req_out_cap, int* req_len_out,
                                     uint8_t val_out[WABISABI_VALIDATION_SIZE]) {
+    ensure_init();
     if (!iparams_bytes || !creds_bytes || !rand_bytes || !req_out || !req_len_out || !val_out) {
         return WABISABI_ERR_NULL_PTR;
     }
@@ -823,6 +875,7 @@ wabisabi_client_handle_response(const uint8_t* iparams_bytes,
                                 const uint8_t* resp_bytes, int resp_len,
                                 const uint8_t val_bytes[WABISABI_VALIDATION_SIZE],
                                 uint8_t* creds_out, int creds_out_cap, int* n_creds_out) {
+    ensure_init();
     if (!iparams_bytes || !resp_bytes || !val_bytes || !creds_out || !n_creds_out) {
         return WABISABI_ERR_NULL_PTR;
     }

@@ -72,7 +72,13 @@ target_include_directories(wabisabi
     PRIVATE ${secp256k1_SOURCE_DIR}/include
 )
 
-target_link_libraries(wabisabi PRIVATE secp256k1)
+# Thread support: wabisabi_init() guards one-time initialization with a
+# platform "run once" primitive (pthread_once on POSIX, InitOnceExecuteOnce on
+# Windows) so concurrent first callers can't observe half-initialized generators.
+# pthread_once lives in libc on modern glibc, but link Threads explicitly so it
+# resolves on every POSIX toolchain (and macOS libSystem).
+find_package(Threads REQUIRED)
+target_link_libraries(wabisabi PRIVATE secp256k1 Threads::Threads)
 
 # The ported ownership-proof module (ownership_proof.c) declares its whole
 # SLIP-0019/BIP-322 API with external linkage under generic, un-namespaced names
@@ -105,7 +111,7 @@ target_compile_options(wabisabi PRIVATE
 )
 
 # Test executable
-add_executable(wabisabi_test tests/test_main.c tests/test_compat.c tests/test_stack.c)
+add_executable(wabisabi_test tests/test_main.c tests/test_compat.c tests/test_stack.c tests/test_concurrency.c)
 target_include_directories(wabisabi_test PRIVATE include src
     ${secp256k1_SOURCE_DIR}/include)
 

@@ -57,15 +57,39 @@ static void hmac_sha256(const uint8_t *key, size_t key_len,
     sha256_final(&ctx, out);
 }
 
-/* Global secp256k1 context */
+/* Global secp256k1 context for the ownership-proof verifier. This is separate
+ * from the core KVAC context (WABISABI_CTX): it needs SIGN|VERIFY capabilities.
+ * Create it exactly once, blocking concurrent first callers, so two threads can't
+ * both create (and leak) one — and so a caller never observes a half-assigned
+ * pointer. Mirrors the one-time init guard in ffi.c (wabisabi_init). */
 static secp256k1_context *secp_ctx = NULL;
 
+static void create_secp_context(void) {
+    secp_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+}
+
+#if defined(_WIN32)
+#include <windows.h>
+static INIT_ONCE secp_ctx_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK secp_ctx_once_cb(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once;
+    (void)param;
+    (void)ctx;
+    create_secp_context();
+    return TRUE;
+}
 static secp256k1_context *get_secp_context(void) {
-    if (secp_ctx == NULL) {
-        secp_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
-    }
+    InitOnceExecuteOnce(&secp_ctx_once, secp_ctx_once_cb, NULL, NULL);
     return secp_ctx;
 }
+#else
+#include <pthread.h>
+static pthread_once_t secp_ctx_once = PTHREAD_ONCE_INIT;
+static secp256k1_context *get_secp_context(void) {
+    pthread_once(&secp_ctx_once, create_secp_context);
+    return secp_ctx;
+}
+#endif
 
 /* Lax DER signature parser, vendored verbatim from libsecp256k1's
  * contrib/lax_der_parsing.c. That file's own header asks downstreams to copy it

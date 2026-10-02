@@ -362,10 +362,17 @@ test_full_protocol(void) {
 
 int run_compat_tests(void);
 int run_stack_tests(void);
+int run_concurrency_tests(void);
 
 int
 main(void) {
     printf("=== WabiSabi C Implementation Tests ===\n\n");
+
+    /* Must run before any explicit init below: it reproduces the concurrent
+     * first-initialization race, which only exists while the generators are
+     * still zero-initialized. */
+    int concurrency_failures = run_concurrency_tests();
+    printf("\n");
 
     wabisabi_ctx_init();
     printf("Initializing generators (may take a moment)...\n");
@@ -394,6 +401,10 @@ main(void) {
     }
     if (stack_failures > 0) {
         printf("\n=== FAILED: %d stack test(s) failed ===\n", stack_failures);
+        return 1;
+    }
+    if (concurrency_failures > 0) {
+        printf("\n=== FAILED: %d concurrency test(s) failed ===\n", concurrency_failures);
         return 1;
     }
     printf("\n=== All tests passed ===\n");
